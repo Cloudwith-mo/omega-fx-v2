@@ -18,6 +18,7 @@ from .sim import (
     EvaluationResult,
     TradeOutcome,
     run_randomized_evaluations,
+    run_randomized_signal_evaluations,
     run_signal_driven_evaluation,
     run_sequential_evaluation,
     simulate_trade_path,
@@ -42,5 +43,6 @@ __all__ = [
     "run_signal_driven_evaluation",
     "EvaluationResult",
     "run_randomized_evaluations",
+    "run_randomized_signal_evaluations",
     "EvaluationBatchResult",
 ]

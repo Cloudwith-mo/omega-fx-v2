@@ -285,6 +285,74 @@ def run_randomized_evaluations(
     )
 
 
+def run_randomized_signal_evaluations(
+    ohlc: pd.DataFrame,
+    signals: pd.Series,
+    initial_equity: float,
+    challenge: ChallengeProfile = DEFAULT_CHALLENGE,
+    config: StrategyConfig = DEFAULT_STRATEGY,
+    costs: Optional[TradingCosts] = DEFAULT_COSTS,
+    num_evals: int = 100,
+    min_bars_per_eval: Optional[int] = None,
+    start_offset: int = 5,
+) -> EvaluationBatchResult:
+    """
+    Run multiple signal-driven evaluations starting at randomized indices.
+    """
+    if min_bars_per_eval is None:
+        min_bars_per_eval = challenge.min_bars_per_eval
+
+    signals = signals.reindex(ohlc.index).fillna(False)
+
+    n_bars = len(ohlc)
+    if n_bars < min_bars_per_eval + start_offset:
+        raise ValueError("Not enough data for requested eval length")
+
+    max_start = n_bars - min_bars_per_eval
+    evaluations: List[EvaluationResult] = []
+
+    for _ in range(num_evals):
+        start_idx = random.randint(start_offset, max_start)
+        ohlc_slice = ohlc.iloc[start_idx:]
+        signals_slice = signals.iloc[start_idx:]
+
+        result = run_signal_driven_evaluation(
+            ohlc=ohlc_slice,
+            signals=signals_slice,
+            initial_equity=initial_equity,
+            challenge=challenge,
+            config=config,
+            costs=costs,
+        )
+        evaluations.append(result)
+
+    num_evals_actual = len(evaluations)
+    target_hit_count = sum(1 for r in evaluations if r.verdict == "target_hit")
+    max_loss_count = sum(1 for r in evaluations if r.verdict == "max_loss_breached")
+    data_exhausted_count = sum(1 for r in evaluations if r.verdict == "data_exhausted")
+
+    if num_evals_actual > 0:
+        pass_rate = target_hit_count / num_evals_actual
+        average_return = sum(r.total_return for r in evaluations) / num_evals_actual
+        average_max_drawdown = (
+            sum(r.max_drawdown_pct for r in evaluations) / num_evals_actual
+        )
+    else:
+        pass_rate = 0.0
+        average_return = 0.0
+        average_max_drawdown = 0.0
+
+    return EvaluationBatchResult(
+        evaluations=evaluations,
+        num_evals=num_evals_actual,
+        target_hit_count=target_hit_count,
+        max_loss_count=max_loss_count,
+        data_exhausted_count=data_exhausted_count,
+        pass_rate=pass_rate,
+        average_return=average_return,
+        average_max_drawdown=average_max_drawdown,
+    )
+
 def run_signal_driven_evaluation(
     ohlc: pd.DataFrame,
     signals: pd.Series,
