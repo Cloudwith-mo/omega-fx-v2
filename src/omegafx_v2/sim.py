@@ -6,7 +6,15 @@ import random
 import pandas as pd
 from typing import List, Optional
 
-from .config import DEFAULT_COSTS, DEFAULT_STRATEGY, StrategyConfig, TradingCosts, XAUUSD_SPEC
+from .config import (
+    DEFAULT_CHALLENGE,
+    DEFAULT_COSTS,
+    DEFAULT_STRATEGY,
+    ChallengeProfile,
+    StrategyConfig,
+    TradingCosts,
+    XAUUSD_SPEC,
+)
 from .strategy import plan_single_trade
 
 
@@ -274,4 +282,96 @@ def run_randomized_evaluations(
         pass_rate=pass_rate,
         average_return=average_return,
         average_max_drawdown=average_max_drawdown,
+    )
+
+
+def run_signal_driven_evaluation(
+    ohlc: pd.DataFrame,
+    signals: pd.Series,
+    initial_equity: float,
+    challenge: ChallengeProfile = DEFAULT_CHALLENGE,
+    config: StrategyConfig = DEFAULT_STRATEGY,
+    costs: Optional[TradingCosts] = DEFAULT_COSTS,
+) -> EvaluationResult:
+    """
+    Evaluate using signal-driven entries; skip signals until the prior trade exits.
+    """
+    signals = signals.reindex(ohlc.index).fillna(False)
+
+    equity = initial_equity
+    trades: list[TradeOutcome] = []
+
+    target_equity = initial_equity * (1.0 + challenge.profit_target_pct)
+    loss_limit_equity = initial_equity * (1.0 - challenge.max_total_loss_pct)
+
+    max_equity = equity
+    min_equity = equity
+
+    signal_indices = [i for i, flag in enumerate(signals.values) if flag]
+    last_exit_pos = -1
+
+    for idx in signal_indices:
+        if idx <= last_exit_pos:
+            continue
+
+        if equity >= target_equity or equity <= loss_limit_equity:
+            break
+
+        if idx >= len(ohlc) - 1:
+            break
+
+        outcome = simulate_trade_path(
+            ohlc=ohlc,
+            entry_idx=idx,
+            account_balance=equity,
+            config=config,
+            costs=costs,
+        )
+        trades.append(outcome)
+        equity += outcome.pnl
+
+        if equity > max_equity:
+            max_equity = equity
+        if equity < min_equity:
+            min_equity = equity
+
+        try:
+            exit_pos = ohlc.index.get_loc(outcome.exit_time)
+        except KeyError:
+            break
+
+        last_exit_pos = exit_pos
+
+    num_trades = len(trades)
+    num_wins = sum(1 for t in trades if t.pnl > 0)
+    num_losses = sum(1 for t in trades if t.pnl < 0)
+
+    total_return = equity / initial_equity - 1.0 if initial_equity > 0 else 0.0
+    profit_target_hit = equity >= target_equity
+
+    if max_equity > 0:
+        max_drawdown_pct = (max_equity - min_equity) / max_equity
+    else:
+        max_drawdown_pct = 0.0
+
+    if profit_target_hit:
+        verdict = "target_hit"
+    elif equity <= loss_limit_equity:
+        verdict = "max_loss_breached"
+    else:
+        verdict = "data_exhausted"
+
+    return EvaluationResult(
+        initial_equity=initial_equity,
+        final_equity=equity,
+        total_return=total_return,
+        profit_target_hit=profit_target_hit,
+        trades=trades,
+        num_trades=num_trades,
+        num_wins=num_wins,
+        num_losses=num_losses,
+        max_equity=max_equity,
+        min_equity=min_equity,
+        max_drawdown_pct=max_drawdown_pct,
+        verdict=verdict,
     )
