@@ -30,6 +30,10 @@ class EvaluationResult:
     num_trades: int
     num_wins: int
     num_losses: int
+    max_equity: float
+    min_equity: float
+    max_drawdown_pct: float  # positive number, e.g. 0.05 for 5% DD
+    verdict: str  # "target_hit" | "max_loss_breached" | "data_exhausted"
 
 
 def simulate_trade_path(
@@ -113,6 +117,7 @@ def run_sequential_evaluation(
     initial_equity: float,
     start_idx: int = 0,
     config: StrategyConfig = DEFAULT_STRATEGY,
+    max_total_loss_pct: float = 0.06,
 ) -> EvaluationResult:
     """
     Run sequential trades until the profit target is hit or data ends.
@@ -121,11 +126,14 @@ def run_sequential_evaluation(
     equity = initial_equity
     trades: List[TradeOutcome] = []
     target_equity = initial_equity * (1.0 + config.profit_target_pct)
+    loss_limit_equity = initial_equity * (1.0 - max_total_loss_pct)
 
     idx = start_idx
     n_bars = len(ohlc)
+    max_equity = equity
+    min_equity = equity
 
-    while idx < n_bars - 1 and equity < target_equity:
+    while idx < n_bars - 1 and equity < target_equity and equity > loss_limit_equity:
         outcome = simulate_trade_path(
             ohlc=ohlc,
             entry_idx=idx,
@@ -134,6 +142,11 @@ def run_sequential_evaluation(
         )
         trades.append(outcome)
         equity += outcome.pnl
+
+        if equity > max_equity:
+            max_equity = equity
+        if equity < min_equity:
+            min_equity = equity
 
         try:
             exit_pos = ohlc.index.get_loc(outcome.exit_time)
@@ -151,6 +164,17 @@ def run_sequential_evaluation(
         total_return = equity / initial_equity - 1.0
 
     profit_target_hit = equity >= target_equity
+    if max_equity > 0:
+        max_drawdown_pct = (max_equity - min_equity) / max_equity
+    else:
+        max_drawdown_pct = 0.0
+
+    if profit_target_hit:
+        verdict = "target_hit"
+    elif equity <= loss_limit_equity:
+        verdict = "max_loss_breached"
+    else:
+        verdict = "data_exhausted"
 
     return EvaluationResult(
         initial_equity=initial_equity,
@@ -161,4 +185,8 @@ def run_sequential_evaluation(
         num_trades=num_trades,
         num_wins=num_wins,
         num_losses=num_losses,
+        max_equity=max_equity,
+        min_equity=min_equity,
+        max_drawdown_pct=max_drawdown_pct,
+        verdict=verdict,
     )

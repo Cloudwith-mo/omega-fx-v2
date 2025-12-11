@@ -32,6 +32,9 @@ def main() -> None:
     print(f"Total return:   {result.total_return:.2%}")
     print(f"Profit target hit (7%): {result.profit_target_hit}")
     print(f"Trades: {result.num_trades}, wins: {result.num_wins}, losses: {result.num_losses}")
+    print(f"Verdict:        {result.verdict}")
+    print(f"Max drawdown:   {result.max_drawdown_pct:.2%}")
+    print("\n(Using max_total_loss_pct = 6%)")
 
     if result.trades:
         first = result.trades[0]

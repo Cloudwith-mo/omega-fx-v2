@@ -3,7 +3,7 @@
 from .config import DEFAULT_STRATEGY, InstrumentSpec, StrategyConfig, XAUUSD_SPEC
 from .data import fetch_xauusd_ohlc
 from .strategy import PlannedTrade, plan_single_trade
-from .sim import TradeOutcome, simulate_trade_path
+from .sim import EvaluationResult, TradeOutcome, run_sequential_evaluation, simulate_trade_path
 
 __all__ = [
     "StrategyConfig",
@@ -15,4 +15,6 @@ __all__ = [
     "plan_single_trade",
     "TradeOutcome",
     "simulate_trade_path",
+    "run_sequential_evaluation",
+    "EvaluationResult",
 ]
