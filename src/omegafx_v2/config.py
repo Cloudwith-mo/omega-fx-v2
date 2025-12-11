@@ -29,6 +29,22 @@ DEFAULT_COSTS = TradingCosts(
 
 
 @dataclass(frozen=True)
+class ChallengeProfile:
+    name: str
+    profit_target_pct: float
+    max_total_loss_pct: float
+    min_bars_per_eval: int
+
+
+DEFAULT_CHALLENGE = ChallengeProfile(
+    name="Simple_7_6",
+    profit_target_pct=0.07,
+    max_total_loss_pct=0.06,
+    min_bars_per_eval=500,
+)
+
+
+@dataclass(frozen=True)
 class StrategyConfig:
     symbol: str
     fixed_lot_size: float

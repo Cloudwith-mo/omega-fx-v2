@@ -2,7 +2,9 @@
 
 from .config import (
     DEFAULT_COSTS,
+    DEFAULT_CHALLENGE,
     DEFAULT_STRATEGY,
+    ChallengeProfile,
     InstrumentSpec,
     StrategyConfig,
     TradingCosts,
@@ -22,9 +24,11 @@ from .sim import (
 __all__ = [
     "StrategyConfig",
     "TradingCosts",
+    "ChallengeProfile",
     "InstrumentSpec",
     "DEFAULT_STRATEGY",
     "DEFAULT_COSTS",
+    "DEFAULT_CHALLENGE",
     "XAUUSD_SPEC",
     "fetch_xauusd_ohlc",
     "PlannedTrade",
