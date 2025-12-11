@@ -24,6 +24,9 @@ def main() -> None:
     print(f"Risk: {trade.risk_amount:,.2f} ({trade.risk_pct:.2%})")
     print(f"Reward: {trade.reward_amount:,.2f} ({trade.reward_pct:.2%})")
     print(f"Account profit target (7%): {trade.account_profit_target:,.2f}")
+    print(f"Entry price: {trade.entry_price:.2f}")
+    print(f"Stop loss: {trade.stop_loss_price:.2f} ({trade.risk_pips:.1f} pips)")
+    print(f"Take profit: {trade.take_profit_price:.2f} ({trade.reward_pips:.1f} pips)")
 
 
 if __name__ == "__main__":

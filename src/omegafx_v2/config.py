@@ -2,6 +2,20 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
+class InstrumentSpec:
+    symbol: str
+    pip_size: float  # minimum price increment
+    pip_value_per_lot: float  # account currency value per pip for 1.0 lot
+
+
+XAUUSD_SPEC = InstrumentSpec(
+    symbol="XAUUSD",
+    pip_size=0.01,
+    pip_value_per_lot=1.0,  # 1 USD per 0.01 move per lot
+)
+
+
+@dataclass(frozen=True)
 class StrategyConfig:
     symbol: str
     fixed_lot_size: float
