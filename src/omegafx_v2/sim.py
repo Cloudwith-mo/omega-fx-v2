@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import random
 
 import pandas as pd
 from typing import List
@@ -34,6 +35,18 @@ class EvaluationResult:
     min_equity: float
     max_drawdown_pct: float  # positive number, e.g. 0.05 for 5% DD
     verdict: str  # "target_hit" | "max_loss_breached" | "data_exhausted"
+
+
+@dataclass
+class EvaluationBatchResult:
+    evaluations: List["EvaluationResult"]
+    num_evals: int
+    target_hit_count: int
+    max_loss_count: int
+    data_exhausted_count: int
+    pass_rate: float
+    average_return: float
+    average_max_drawdown: float
 
 
 def simulate_trade_path(
@@ -189,4 +202,62 @@ def run_sequential_evaluation(
         min_equity=min_equity,
         max_drawdown_pct=max_drawdown_pct,
         verdict=verdict,
+    )
+
+
+def run_randomized_evaluations(
+    ohlc: pd.DataFrame,
+    initial_equity: float,
+    num_evals: int = 100,
+    min_bars_per_eval: int = 500,
+    start_offset: int = 5,
+    config: StrategyConfig = DEFAULT_STRATEGY,
+    max_total_loss_pct: float = 0.06,
+) -> EvaluationBatchResult:
+    """
+    Run multiple sequential evaluations starting at random indices within the dataset.
+    """
+    n_bars = len(ohlc)
+    if n_bars < min_bars_per_eval + start_offset:
+        raise ValueError("Not enough data for requested eval length")
+
+    max_start = n_bars - min_bars_per_eval
+    evaluations: List[EvaluationResult] = []
+
+    for _ in range(num_evals):
+        entry_idx = random.randint(start_offset, max_start)
+        result = run_sequential_evaluation(
+            ohlc=ohlc,
+            initial_equity=initial_equity,
+            start_idx=entry_idx,
+            config=config,
+            max_total_loss_pct=max_total_loss_pct,
+        )
+        evaluations.append(result)
+
+    num_evals_actual = len(evaluations)
+    target_hit_count = sum(1 for r in evaluations if r.verdict == "target_hit")
+    max_loss_count = sum(1 for r in evaluations if r.verdict == "max_loss_breached")
+    data_exhausted_count = sum(1 for r in evaluations if r.verdict == "data_exhausted")
+
+    if num_evals_actual > 0:
+        pass_rate = target_hit_count / num_evals_actual
+        average_return = sum(r.total_return for r in evaluations) / num_evals_actual
+        average_max_drawdown = (
+            sum(r.max_drawdown_pct for r in evaluations) / num_evals_actual
+        )
+    else:
+        pass_rate = 0.0
+        average_return = 0.0
+        average_max_drawdown = 0.0
+
+    return EvaluationBatchResult(
+        evaluations=evaluations,
+        num_evals=num_evals_actual,
+        target_hit_count=target_hit_count,
+        max_loss_count=max_loss_count,
+        data_exhausted_count=data_exhausted_count,
+        pass_rate=pass_rate,
+        average_return=average_return,
+        average_max_drawdown=average_max_drawdown,
     )
