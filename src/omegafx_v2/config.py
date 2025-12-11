@@ -16,6 +16,19 @@ XAUUSD_SPEC = InstrumentSpec(
 
 
 @dataclass(frozen=True)
+class TradingCosts:
+    spread_pips: float  # one-way spread measured in pips
+    commission_per_lot_round_trip: float  # currency per 1.0 lot round-trip
+
+
+# Example default costs for XAUUSD – adjust to your broker
+DEFAULT_COSTS = TradingCosts(
+    spread_pips=20.0,  # 0.20 in price with pip_size=0.01
+    commission_per_lot_round_trip=7.0,
+)
+
+
+@dataclass(frozen=True)
 class StrategyConfig:
     symbol: str
     fixed_lot_size: float

@@ -7,6 +7,7 @@ SRC_DIR = ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+from omegafx_v2.config import DEFAULT_COSTS
 from omegafx_v2.data import fetch_xauusd_ohlc
 from omegafx_v2.sim import run_randomized_evaluations
 
@@ -28,6 +29,7 @@ def main() -> None:
         min_bars_per_eval=500,
         start_offset=5,
         max_total_loss_pct=0.06,
+        costs=DEFAULT_COSTS,
     )
 
     print("\n--- Batch evaluation summary ---")
@@ -38,6 +40,9 @@ def main() -> None:
     print(f"Pass rate (hit 7% before -6%): {batch.pass_rate:.2%}")
     print(f"Avg total return:              {batch.average_return:.2%}")
     print(f"Avg max drawdown:              {batch.average_max_drawdown:.2%}")
+    print("\nCosts used:")
+    print(f"  spread_pips: {DEFAULT_COSTS.spread_pips}")
+    print(f"  commission_per_lot_round_trip: {DEFAULT_COSTS.commission_per_lot_round_trip}")
 
 
 if __name__ == "__main__":

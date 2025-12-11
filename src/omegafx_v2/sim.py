@@ -4,9 +4,9 @@ from dataclasses import dataclass
 import random
 
 import pandas as pd
-from typing import List
+from typing import List, Optional
 
-from .config import DEFAULT_STRATEGY, StrategyConfig, XAUUSD_SPEC
+from .config import DEFAULT_COSTS, DEFAULT_STRATEGY, StrategyConfig, TradingCosts, XAUUSD_SPEC
 from .strategy import plan_single_trade
 
 
@@ -54,6 +54,7 @@ def simulate_trade_path(
     entry_idx: int,
     account_balance: float,
     config: StrategyConfig = DEFAULT_STRATEGY,
+    costs: Optional[TradingCosts] = DEFAULT_COSTS,
 ) -> TradeOutcome:
     """
     Simulate a single long trade on XAUUSD:
@@ -111,7 +112,16 @@ def simulate_trade_path(
 
     price_move = exit_price - entry_price
     pips_move = price_move / XAUUSD_SPEC.pip_size
-    pnl = pips_move * XAUUSD_SPEC.pip_value_per_lot * trade_plan.lot_size
+    gross_pnl = pips_move * XAUUSD_SPEC.pip_value_per_lot * trade_plan.lot_size
+
+    round_trip_cost = 0.0
+    if costs is not None:
+        round_trip_cost = (
+            costs.spread_pips * XAUUSD_SPEC.pip_value_per_lot * trade_plan.lot_size
+            + costs.commission_per_lot_round_trip * trade_plan.lot_size
+        )
+
+    pnl = gross_pnl - round_trip_cost
     pnl_pct = pnl / account_balance
 
     return TradeOutcome(
@@ -131,6 +141,7 @@ def run_sequential_evaluation(
     start_idx: int = 0,
     config: StrategyConfig = DEFAULT_STRATEGY,
     max_total_loss_pct: float = 0.06,
+    costs: Optional[TradingCosts] = DEFAULT_COSTS,
 ) -> EvaluationResult:
     """
     Run sequential trades until the profit target is hit or data ends.
@@ -152,6 +163,7 @@ def run_sequential_evaluation(
             entry_idx=idx,
             account_balance=equity,
             config=config,
+            costs=costs,
         )
         trades.append(outcome)
         equity += outcome.pnl
@@ -213,6 +225,7 @@ def run_randomized_evaluations(
     start_offset: int = 5,
     config: StrategyConfig = DEFAULT_STRATEGY,
     max_total_loss_pct: float = 0.06,
+    costs: Optional[TradingCosts] = DEFAULT_COSTS,
 ) -> EvaluationBatchResult:
     """
     Run multiple sequential evaluations starting at random indices within the dataset.
@@ -232,6 +245,7 @@ def run_randomized_evaluations(
             start_idx=entry_idx,
             config=config,
             max_total_loss_pct=max_total_loss_pct,
+            costs=costs,
         )
         evaluations.append(result)
 

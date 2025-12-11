@@ -1,6 +1,13 @@
 """Omega FX v2 core package."""
 
-from .config import DEFAULT_STRATEGY, InstrumentSpec, StrategyConfig, XAUUSD_SPEC
+from .config import (
+    DEFAULT_COSTS,
+    DEFAULT_STRATEGY,
+    InstrumentSpec,
+    StrategyConfig,
+    TradingCosts,
+    XAUUSD_SPEC,
+)
 from .data import fetch_xauusd_ohlc
 from .strategy import PlannedTrade, plan_single_trade
 from .sim import (
@@ -14,8 +21,10 @@ from .sim import (
 
 __all__ = [
     "StrategyConfig",
+    "TradingCosts",
     "InstrumentSpec",
     "DEFAULT_STRATEGY",
+    "DEFAULT_COSTS",
     "XAUUSD_SPEC",
     "fetch_xauusd_ohlc",
     "PlannedTrade",
