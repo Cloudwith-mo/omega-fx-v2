@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pandas as pd
+from typing import List
 
 from .config import DEFAULT_STRATEGY, StrategyConfig, XAUUSD_SPEC
 from .strategy import plan_single_trade
@@ -17,6 +18,18 @@ class TradeOutcome:
     exit_reason: str  # "tp" | "sl" | "end"
     pnl: float
     pnl_pct: float
+
+
+@dataclass
+class EvaluationResult:
+    initial_equity: float
+    final_equity: float
+    total_return: float  # final_equity / initial_equity - 1
+    profit_target_hit: bool
+    trades: List[TradeOutcome]
+    num_trades: int
+    num_wins: int
+    num_losses: int
 
 
 def simulate_trade_path(
@@ -92,4 +105,60 @@ def simulate_trade_path(
         exit_reason=exit_reason,
         pnl=pnl,
         pnl_pct=pnl_pct,
+    )
+
+
+def run_sequential_evaluation(
+    ohlc: pd.DataFrame,
+    initial_equity: float,
+    start_idx: int = 0,
+    config: StrategyConfig = DEFAULT_STRATEGY,
+) -> EvaluationResult:
+    """
+    Run sequential trades until the profit target is hit or data ends.
+    Each trade uses the current equity for position sizing.
+    """
+    equity = initial_equity
+    trades: List[TradeOutcome] = []
+    target_equity = initial_equity * (1.0 + config.profit_target_pct)
+
+    idx = start_idx
+    n_bars = len(ohlc)
+
+    while idx < n_bars - 1 and equity < target_equity:
+        outcome = simulate_trade_path(
+            ohlc=ohlc,
+            entry_idx=idx,
+            account_balance=equity,
+            config=config,
+        )
+        trades.append(outcome)
+        equity += outcome.pnl
+
+        try:
+            exit_pos = ohlc.index.get_loc(outcome.exit_time)
+        except KeyError:
+            break
+
+        idx = exit_pos + 1
+
+    num_trades = len(trades)
+    num_wins = sum(1 for t in trades if t.pnl > 0)
+    num_losses = sum(1 for t in trades if t.pnl < 0)
+
+    total_return = 0.0
+    if initial_equity > 0.0:
+        total_return = equity / initial_equity - 1.0
+
+    profit_target_hit = equity >= target_equity
+
+    return EvaluationResult(
+        initial_equity=initial_equity,
+        final_equity=equity,
+        total_return=total_return,
+        profit_target_hit=profit_target_hit,
+        trades=trades,
+        num_trades=num_trades,
+        num_wins=num_wins,
+        num_losses=num_losses,
     )
