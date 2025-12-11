@@ -3,7 +3,10 @@ name = "omega-fx-v2"
 version = "0.1.0"
 description = "Lean prop trading kernel for gold"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "pandas",
+    "yfinance",
+]
 
 [build-system]
 requires = ["setuptools>=65.0"]
