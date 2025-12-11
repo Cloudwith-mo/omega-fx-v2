@@ -43,6 +43,7 @@ def main() -> None:
         num_evals=num_evals,
         min_bars_per_eval=challenge.min_bars_per_eval,
         start_offset=5,
+        daily_loss_pct=challenge.daily_loss_pct,
     )
 
     print("\n--- Signal-driven batch evaluation summary ---")
@@ -50,6 +51,7 @@ def main() -> None:
     print(f"Profit target:    {challenge.profit_target_pct:.2%}")
     print(f"Max total loss:   {challenge.max_total_loss_pct:.2%}")
     print(f"Min bars per eval:{challenge.min_bars_per_eval}")
+    print(f"Daily loss cap:   {challenge.daily_loss_pct:.2%}")
 
     print(f"\nEvals run:        {batch.num_evals}")
     print(f"Target hits:      {batch.target_hit_count}")

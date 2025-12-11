@@ -34,6 +34,7 @@ class ChallengeProfile:
     profit_target_pct: float
     max_total_loss_pct: float
     min_bars_per_eval: int
+    daily_loss_pct: float | None = None
 
 
 DEFAULT_CHALLENGE = ChallengeProfile(
@@ -41,6 +42,7 @@ DEFAULT_CHALLENGE = ChallengeProfile(
     profit_target_pct=0.07,
     max_total_loss_pct=0.06,
     min_bars_per_eval=500,
+    daily_loss_pct=0.02,
 )
 
 

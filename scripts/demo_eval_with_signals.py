@@ -40,12 +40,14 @@ def main() -> None:
         challenge=challenge,
         config=cfg,
         costs=DEFAULT_COSTS,
+        daily_loss_pct=challenge.daily_loss_pct,
     )
 
     print("\n--- Signal-driven evaluation summary ---")
     print(f"Challenge:       {challenge.name}")
     print(f"Profit target:   {challenge.profit_target_pct:.2%}")
     print(f"Max total loss:  {challenge.max_total_loss_pct:.2%}")
+    print(f"Daily loss cap:  {challenge.daily_loss_pct:.2%}")
 
     print(f"\nInitial equity:  {result.initial_equity:,.2f}")
     print(f"Final equity:    {result.final_equity:,.2f}")

@@ -295,12 +295,15 @@ def run_randomized_signal_evaluations(
     num_evals: int = 100,
     min_bars_per_eval: Optional[int] = None,
     start_offset: int = 5,
+    daily_loss_pct: Optional[float] = None,
 ) -> EvaluationBatchResult:
     """
     Run multiple signal-driven evaluations starting at randomized indices.
     """
     if min_bars_per_eval is None:
         min_bars_per_eval = challenge.min_bars_per_eval
+    if daily_loss_pct is None:
+        daily_loss_pct = challenge.daily_loss_pct
 
     signals = signals.reindex(ohlc.index).fillna(False)
 
@@ -323,6 +326,7 @@ def run_randomized_signal_evaluations(
             challenge=challenge,
             config=config,
             costs=costs,
+            daily_loss_pct=daily_loss_pct,
         )
         evaluations.append(result)
 
@@ -360,10 +364,14 @@ def run_signal_driven_evaluation(
     challenge: ChallengeProfile = DEFAULT_CHALLENGE,
     config: StrategyConfig = DEFAULT_STRATEGY,
     costs: Optional[TradingCosts] = DEFAULT_COSTS,
+    daily_loss_pct: Optional[float] = None,
 ) -> EvaluationResult:
     """
     Evaluate using signal-driven entries; skip signals until the prior trade exits.
     """
+    if daily_loss_pct is None:
+        daily_loss_pct = challenge.daily_loss_pct
+
     signals = signals.reindex(ohlc.index).fillna(False)
 
     equity = initial_equity
@@ -374,6 +382,8 @@ def run_signal_driven_evaluation(
 
     max_equity = equity
     min_equity = equity
+    dates = ohlc.index.date
+    daily_pnl: dict[object, float] = {}
 
     signal_indices = [i for i, flag in enumerate(signals.values) if flag]
     last_exit_pos = -1
@@ -384,6 +394,13 @@ def run_signal_driven_evaluation(
 
         if equity >= target_equity or equity <= loss_limit_equity:
             break
+
+        if daily_loss_pct is not None:
+            day = dates[idx]
+            day_pnl = daily_pnl.get(day, 0.0)
+            day_limit = initial_equity * daily_loss_pct
+            if day_pnl <= -day_limit:
+                continue
 
         if idx >= len(ohlc) - 1:
             break
@@ -397,6 +414,10 @@ def run_signal_driven_evaluation(
         )
         trades.append(outcome)
         equity += outcome.pnl
+
+        if daily_loss_pct is not None:
+            day = dates[idx]
+            daily_pnl[day] = daily_pnl.get(day, 0.0) + outcome.pnl
 
         if equity > max_equity:
             max_equity = equity
