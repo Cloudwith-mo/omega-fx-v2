@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .config import DEFAULT_SESSION, TradingSession
+from .config import (
+    DEFAULT_SESSION,
+    DEFAULT_SIGNAL_CONFIG,
+    SignalConfig,
+    TradingSession,
+)
 
 
 def generate_breakout_signals(
@@ -99,3 +104,28 @@ def compute_h4_sma_filter(
 
     trend_up_1h = trend_up.reindex(ohlc.index, method="ffill")
     return trend_up_1h.fillna(False)
+
+
+def build_signals(
+    ohlc: pd.DataFrame,
+    signal_config: SignalConfig = DEFAULT_SIGNAL_CONFIG,
+    session: TradingSession = DEFAULT_SESSION,
+) -> pd.Series:
+    """
+    Combined signal pipeline: breakout + session + ATR + trend filters.
+    """
+    session_mask = build_session_mask(ohlc, session=session)
+
+    raw_signals = generate_breakout_signals(
+        ohlc, lookback=signal_config.breakout_lookback
+    )
+
+    atr = compute_atr(ohlc, period=signal_config.atr_period)
+    atr_mask = build_atr_filter(atr, percentile=signal_config.atr_percentile)
+
+    h4_trend_mask = compute_h4_sma_filter(
+        ohlc, sma_period=signal_config.h4_sma_period
+    )
+
+    signals = raw_signals & session_mask & atr_mask & h4_trend_mask
+    return signals

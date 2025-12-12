@@ -64,6 +64,22 @@ DEFAULT_SESSION = TradingSession(
 
 
 @dataclass(frozen=True)
+class SignalConfig:
+    breakout_lookback: int = 20
+    atr_period: int = 14
+    atr_percentile: int = 50
+    h4_sma_period: int = 50
+
+
+DEFAULT_SIGNAL_CONFIG = SignalConfig(
+    breakout_lookback=20,
+    atr_period=14,
+    atr_percentile=50,
+    h4_sma_period=50,
+)
+
+
+@dataclass(frozen=True)
 class StrategyConfig:
     symbol: str
     fixed_lot_size: float

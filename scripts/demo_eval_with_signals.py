@@ -11,17 +11,12 @@ if str(SRC_DIR) not in sys.path:
 from omegafx_v2.config import (
     DEFAULT_CHALLENGE,
     DEFAULT_COSTS,
+    DEFAULT_SIGNAL_CONFIG,
     DEFAULT_SESSION,
     DEFAULT_STRATEGY,
 )
 from omegafx_v2.data import fetch_xauusd_ohlc
-from omegafx_v2.signals import (
-    build_atr_filter,
-    build_session_mask,
-    compute_atr,
-    compute_h4_sma_filter,
-    generate_breakout_signals,
-)
+from omegafx_v2.signals import build_signals
 from omegafx_v2.sim import run_signal_driven_evaluation
 
 
@@ -32,19 +27,12 @@ def main() -> None:
     ohlc = fetch_xauusd_ohlc(start.isoformat(), end.isoformat())
     print(f"Fetched {len(ohlc)} XAUUSD 1h bars from {start} to {end}")
 
+    signal_cfg = DEFAULT_SIGNAL_CONFIG
     session = DEFAULT_SESSION
-    session_mask = build_session_mask(ohlc, session=session)
+    signals = build_signals(ohlc, signal_config=signal_cfg, session=session)
 
-    raw_signals = generate_breakout_signals(ohlc, lookback=20)
-    atr = compute_atr(ohlc, period=14)
-    atr_mask = build_atr_filter(atr, percentile=50)
-    h4_trend_mask = compute_h4_sma_filter(ohlc, sma_period=50)
-
-    signals = raw_signals & session_mask & atr_mask & h4_trend_mask
-
-    print(f"Generated {int(raw_signals.sum())} raw breakout signals")
-    print(f"{int(raw_signals.sum() - signals.sum())} signals removed by filters")
-    print(f"{int(signals.sum())} signals remain after session + ATR + trend filter ({session.name})")
+    print(f"Final signals after all filters: {int(signals.sum())}")
+    print(f"Signal config: {signal_cfg}")
 
     challenge = DEFAULT_CHALLENGE
 

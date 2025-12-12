@@ -13,15 +13,11 @@ from omegafx_v2.config import (
     DEFAULT_COSTS,
     DEFAULT_SESSION,
     DEFAULT_STRATEGY,
+    DEFAULT_SIGNAL_CONFIG,
+    SignalConfig,
 )
 from omegafx_v2.data import fetch_xauusd_ohlc
-from omegafx_v2.signals import (
-    build_atr_filter,
-    build_session_mask,
-    compute_atr,
-    compute_h4_sma_filter,
-    generate_breakout_signals,
-)
+from omegafx_v2.signals import build_signals
 from omegafx_v2.sim import run_randomized_signal_evaluations
 
 
@@ -33,10 +29,6 @@ def main() -> None:
     print(f"Fetched {len(ohlc)} XAUUSD 1h bars from {start} to {end}")
 
     session = DEFAULT_SESSION
-    session_mask = build_session_mask(ohlc, session=session)
-
-    atr = compute_atr(ohlc, period=14)
-    h4_trend_mask = compute_h4_sma_filter(ohlc, sma_period=50)
 
     challenge = DEFAULT_CHALLENGE
     cfg_base = replace(
@@ -53,11 +45,17 @@ def main() -> None:
     rows = []
 
     for lookback in breakout_lookbacks:
-        raw_signals = generate_breakout_signals(ohlc, lookback=lookback)
-
         for perc in atr_percentiles:
-            atr_mask = build_atr_filter(atr, percentile=perc)
-            signals = raw_signals & session_mask & atr_mask & h4_trend_mask
+            signal_cfg = SignalConfig(
+                breakout_lookback=lookback,
+                atr_period=DEFAULT_SIGNAL_CONFIG.atr_period,
+                atr_percentile=perc,
+                h4_sma_period=DEFAULT_SIGNAL_CONFIG.h4_sma_period,
+            )
+
+            signals = build_signals(
+                ohlc, signal_config=signal_cfg, session=session
+            )
 
             if signals.sum() == 0:
                 continue
@@ -82,8 +80,7 @@ def main() -> None:
 
             rows.append(
                 (
-                    lookback,
-                    perc,
+                    signal_cfg,
                     batch.pass_rate,
                     batch.average_return,
                     batch.average_max_drawdown,
@@ -91,13 +88,13 @@ def main() -> None:
                 )
             )
 
-    rows.sort(key=lambda r: r[2], reverse=True)
+    rows.sort(key=lambda r: r[1], reverse=True)
 
-    print("\nlookback  atr_pct  pass_rate  avg_ret  avg_dd  avg_trades")
-    print("----------------------------------------------------------")
-    for lookback, perc, pass_rate, avg_ret, avg_dd, avg_trades in rows:
+    print("\nsignal_cfg                                pass_rate  avg_ret  avg_dd  avg_trades")
+    print("-------------------------------------------------------------------------------")
+    for signal_cfg, pass_rate, avg_ret, avg_dd, avg_trades in rows:
         print(
-            f"{lookback:8d}  {perc:7.1f}  "
+            f"{str(signal_cfg):35s}  "
             f"{pass_rate:9.3f}  {avg_ret:7.3f}  {avg_dd:7.3f}  {avg_trades:10.2f}"
         )
 
