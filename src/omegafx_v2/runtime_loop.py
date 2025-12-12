@@ -7,6 +7,7 @@ import json
 import os
 import csv
 from pathlib import Path
+from datetime import datetime
 
 import pandas as pd
 
@@ -70,6 +71,8 @@ def run_live_runtime(
     daily_pnl: dict = {}
     trades_executed = 0
     last_processed = None
+    strategy_version = os.getenv("OMEGAFX_STRATEGY_VERSION", "")
+    run_id = os.getenv("OMEGAFX_RUN_ID", "")
 
     target_equity = initial_equity * (1.0 + profile.challenge.profit_target_pct)
     loss_limit_equity = initial_equity * (1.0 - profile.challenge.max_total_loss_pct)
@@ -125,6 +128,7 @@ def run_live_runtime(
                 broker.log(f"Daily loss cap hit for {day}; skipping signal.")
                 continue
 
+        equity_before = equity
         trade_plan = plan_single_trade(
             account_balance=equity,
             current_price=df["close"].iloc[entry_idx],
@@ -164,32 +168,50 @@ def run_live_runtime(
                     writer = csv.DictWriter(
                         f,
                         fieldnames=[
-                            "profile",
+                            "profile_name",
                             "symbol",
+                            "strategy_version",
                             "entry_time",
                             "exit_time",
+                            "entry_date",
+                            "direction",
+                            "lot_size",
                             "entry_price",
                             "exit_price",
+                            "sl_price",
+                            "tp_price",
                             "exit_reason",
                             "pnl",
                             "pnl_pct",
+                            "equity_before",
                             "equity_after",
+                            "challenge_id",
+                            "run_id",
                         ],
                     )
                     if write_header:
                         writer.writeheader()
                     writer.writerow(
                         {
-                            "profile": profile.name,
+                            "profile_name": profile.name,
                             "symbol": profile.symbol_key,
+                            "strategy_version": strategy_version,
                             "entry_time": outcome.entry_time.isoformat(),
                             "exit_time": outcome.exit_time.isoformat(),
+                            "entry_date": outcome.entry_time.date().isoformat(),
+                            "direction": trade_plan.direction,
+                            "lot_size": trade_plan.lot_size,
                             "entry_price": outcome.entry_price,
                             "exit_price": outcome.exit_price,
+                            "sl_price": trade_plan.stop_loss_price,
+                            "tp_price": trade_plan.take_profit_price,
                             "exit_reason": outcome.exit_reason,
                             "pnl": outcome.pnl,
                             "pnl_pct": outcome.pnl_pct,
+                            "equity_before": equity_before,
                             "equity_after": equity,
+                            "challenge_id": os.getenv("OMEGAFX_CHALLENGE_ID", ""),
+                            "run_id": run_id or datetime.utcnow().isoformat(),
                         }
                     )
             except Exception as exc:  # pragma: no cover
