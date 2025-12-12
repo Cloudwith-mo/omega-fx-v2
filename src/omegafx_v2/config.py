@@ -211,6 +211,57 @@ DEFAULT_PROFILE_USDJPY_MR_M15_V1 = StrategyProfile(
     session=DEFAULT_SESSION,
 )
 
+DEFAULT_PROFILE_EURUSD_MR_M15_V1 = StrategyProfile(
+    name="EURUSD_M15_MeanReversion_V1",
+    symbol_key="EURUSD",
+    timeframe="15m",
+    strategy=DEFAULT_STRATEGY,
+    signals=MeanReversionSignalConfig(
+        ma_period=50,
+        atr_period=14,
+        entry_k=1.0,
+        exit_k=0.0,
+        h4_sma_period=50,
+    ),
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=DEFAULT_SESSION,
+)
+
+DEFAULT_PROFILE_GBPUSD_MR_M15_V1 = StrategyProfile(
+    name="GBPUSD_M15_MeanReversion_V1",
+    symbol_key="GBPUSD",
+    timeframe="15m",
+    strategy=DEFAULT_STRATEGY,
+    signals=MeanReversionSignalConfig(
+        ma_period=50,
+        atr_period=14,
+        entry_k=1.0,
+        exit_k=0.0,
+        h4_sma_period=50,
+    ),
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=DEFAULT_SESSION,
+)
+
+DEFAULT_PROFILE_XAUUSD_MR_M15_V1 = StrategyProfile(
+    name="XAUUSD_M15_MeanReversion_V1",
+    symbol_key="XAUUSD",
+    timeframe="15m",
+    strategy=DEFAULT_STRATEGY,
+    signals=MeanReversionSignalConfig(
+        ma_period=50,
+        atr_period=14,
+        entry_k=1.0,
+        exit_k=0.0,
+        h4_sma_period=50,
+    ),
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=DEFAULT_SESSION,
+)
+
 DEFAULT_PROFILE_USDJPY_TREND_M15_V1 = StrategyProfile(
     name="USDJPY_M15_TrendCont_V1",
     symbol_key="USDJPY",
@@ -237,6 +288,18 @@ DEFAULT_PORTFOLIO_USDJPY_V2 = PortfolioProfile(
     strategies=[
         DEFAULT_PROFILE_USDJPY_MR_M15_V1,
         DEFAULT_PROFILE_USDJPY_TREND_M15_V1,
+    ],
+    portfolio_daily_loss_pct=0.03,
+    portfolio_max_loss_pct=0.06,
+)
+
+DEFAULT_PORTFOLIO_M15_MR_MULTI = PortfolioProfile(
+    name="M15_MR_MultiSymbol_V1",
+    strategies=[
+        DEFAULT_PROFILE_USDJPY_MR_M15_V1,
+        DEFAULT_PROFILE_EURUSD_MR_M15_V1,
+        DEFAULT_PROFILE_GBPUSD_MR_M15_V1,
+        DEFAULT_PROFILE_XAUUSD_MR_M15_V1,
     ],
     portfolio_daily_loss_pct=0.03,
     portfolio_max_loss_pct=0.06,
