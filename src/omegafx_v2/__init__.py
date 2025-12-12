@@ -16,6 +16,7 @@ from .data import fetch_xauusd_ohlc
 from .signals import (
     build_atr_filter,
     build_session_mask,
+    compute_h4_sma_filter,
     compute_atr,
     generate_breakout_signals,
 )
@@ -44,6 +45,7 @@ __all__ = [
     "XAUUSD_SPEC",
     "build_atr_filter",
     "build_session_mask",
+    "compute_h4_sma_filter",
     "compute_atr",
     "generate_breakout_signals",
     "fetch_xauusd_ohlc",

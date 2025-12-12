@@ -19,6 +19,7 @@ from omegafx_v2.signals import (
     build_atr_filter,
     build_session_mask,
     compute_atr,
+    compute_h4_sma_filter,
     generate_breakout_signals,
 )
 from omegafx_v2.sim import run_randomized_signal_evaluations
@@ -35,6 +36,7 @@ def main() -> None:
     session_mask = build_session_mask(ohlc, session=session)
 
     atr = compute_atr(ohlc, period=14)
+    h4_trend_mask = compute_h4_sma_filter(ohlc, sma_period=50)
 
     challenge = DEFAULT_CHALLENGE
     cfg_base = replace(
@@ -55,7 +57,7 @@ def main() -> None:
 
         for perc in atr_percentiles:
             atr_mask = build_atr_filter(atr, percentile=perc)
-            signals = raw_signals & session_mask & atr_mask
+            signals = raw_signals & session_mask & atr_mask & h4_trend_mask
 
             if signals.sum() == 0:
                 continue

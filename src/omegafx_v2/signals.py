@@ -76,3 +76,26 @@ def build_atr_filter(
         return pd.Series([], dtype=bool)
     threshold = atr.quantile(percentile / 100)
     return atr > threshold
+
+
+def compute_h4_sma_filter(
+    ohlc: pd.DataFrame,
+    sma_period: int = 50,
+) -> pd.Series:
+    """
+    Resample to 4H bars, compute SMA, and map an uptrend mask back to 1H index.
+    """
+    if not isinstance(ohlc.index, pd.DatetimeIndex):
+        raise ValueError("OHLC index must be DatetimeIndex")
+
+    h4 = (
+        ohlc.resample("4H")
+        .agg({"open": "first", "high": "max", "low": "min", "close": "last"})
+        .dropna()
+    )
+
+    sma = h4["close"].rolling(sma_period).mean()
+    trend_up = h4["close"] > sma
+
+    trend_up_1h = trend_up.reindex(ohlc.index, method="ffill")
+    return trend_up_1h.fillna(False)
