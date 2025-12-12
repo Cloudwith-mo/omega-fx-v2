@@ -8,7 +8,7 @@ from .config import (
     SignalConfig,
     StrategyProfile,
 )
-from .data import fetch_xauusd_ohlc
+from .data import fetch_symbol_ohlc
 from .signals import build_mean_reversion_signals, build_signals
 from .sim import run_randomized_signal_evaluations, run_signal_driven_evaluation
 
@@ -42,7 +42,11 @@ def run_profile_summary(
     end = date.today()
     start = end - timedelta(days=days)
 
-    ohlc = fetch_xauusd_ohlc(start.isoformat(), end.isoformat())
+    ohlc = fetch_symbol_ohlc(
+        profile.symbol_key,
+        start=start.isoformat(),
+        end=end.isoformat(),
+    )
 
     signals = _build_signals_for_profile(ohlc, profile)
 

@@ -117,8 +117,9 @@ DEFAULT_STRATEGY = StrategyConfig(
 @dataclass(frozen=True)
 class StrategyProfile:
     name: str
+    symbol_key: str
     strategy: StrategyConfig
-    signals: SignalConfig
+    signals: SignalConfig | MeanReversionSignalConfig
     challenge: ChallengeProfile
     costs: TradingCosts
     session: TradingSession
@@ -126,6 +127,7 @@ class StrategyProfile:
 
 DEFAULT_PROFILE_BREAKOUT_V1 = StrategyProfile(
     name="XAU_H1_Breakout_V1",
+    symbol_key="XAUUSD",
     strategy=DEFAULT_STRATEGY,
     signals=DEFAULT_SIGNAL_CONFIG,
     challenge=DEFAULT_CHALLENGE,
@@ -135,6 +137,7 @@ DEFAULT_PROFILE_BREAKOUT_V1 = StrategyProfile(
 
 DEFAULT_PROFILE_XAU_MR_V1 = StrategyProfile(
     name="XAU_H1_MeanReversion_V1",
+    symbol_key="XAUUSD",
     strategy=DEFAULT_STRATEGY,
     signals=DEFAULT_MR_SIGNAL_CONFIG,
     challenge=DEFAULT_CHALLENGE,
