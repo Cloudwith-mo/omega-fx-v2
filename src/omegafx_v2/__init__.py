@@ -3,15 +3,17 @@
 from .config import (
     DEFAULT_COSTS,
     DEFAULT_CHALLENGE,
+    DEFAULT_SESSION,
     DEFAULT_STRATEGY,
     ChallengeProfile,
     InstrumentSpec,
     StrategyConfig,
     TradingCosts,
+    TradingSession,
     XAUUSD_SPEC,
 )
 from .data import fetch_xauusd_ohlc
-from .signals import generate_breakout_signals
+from .signals import build_session_mask, generate_breakout_signals
 from .strategy import PlannedTrade, plan_single_trade
 from .sim import (
     EvaluationBatchResult,
@@ -28,11 +30,14 @@ __all__ = [
     "StrategyConfig",
     "TradingCosts",
     "ChallengeProfile",
+    "TradingSession",
     "InstrumentSpec",
     "DEFAULT_STRATEGY",
     "DEFAULT_COSTS",
     "DEFAULT_CHALLENGE",
+    "DEFAULT_SESSION",
     "XAUUSD_SPEC",
+    "build_session_mask",
     "generate_breakout_signals",
     "fetch_xauusd_ohlc",
     "PlannedTrade",

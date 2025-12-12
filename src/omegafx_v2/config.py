@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Sequence
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,22 @@ DEFAULT_CHALLENGE = ChallengeProfile(
     max_total_loss_pct=0.06,
     min_bars_per_eval=500,
     daily_loss_pct=0.02,
+)
+
+
+@dataclass(frozen=True)
+class TradingSession:
+    name: str
+    allowed_weekdays: Sequence[int]  # 0=Mon ... 6=Sun
+    start_hour: int  # inclusive, 0–23
+    end_hour: int  # exclusive, 1–24
+
+
+DEFAULT_SESSION = TradingSession(
+    name="XAU_London_NY",
+    allowed_weekdays=(0, 1, 2, 3, 4),  # Mon–Fri
+    start_hour=7,
+    end_hour=20,
 )
 
 

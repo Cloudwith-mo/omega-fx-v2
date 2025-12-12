@@ -8,9 +8,14 @@ SRC_DIR = ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from omegafx_v2.config import DEFAULT_CHALLENGE, DEFAULT_COSTS, DEFAULT_STRATEGY
+from omegafx_v2.config import (
+    DEFAULT_CHALLENGE,
+    DEFAULT_COSTS,
+    DEFAULT_SESSION,
+    DEFAULT_STRATEGY,
+)
 from omegafx_v2.data import fetch_xauusd_ohlc
-from omegafx_v2.signals import generate_breakout_signals
+from omegafx_v2.signals import build_session_mask, generate_breakout_signals
 from omegafx_v2.sim import run_signal_driven_evaluation
 
 
@@ -21,8 +26,14 @@ def main() -> None:
     ohlc = fetch_xauusd_ohlc(start.isoformat(), end.isoformat())
     print(f"Fetched {len(ohlc)} XAUUSD 1h bars from {start} to {end}")
 
-    signals = generate_breakout_signals(ohlc, lookback=20)
-    print(f"Generated {signals.sum()} breakout signals")
+    session = DEFAULT_SESSION
+    session_mask = build_session_mask(ohlc, session=session)
+
+    raw_signals = generate_breakout_signals(ohlc, lookback=20)
+    signals = raw_signals & session_mask
+
+    print(f"Generated {int(raw_signals.sum())} raw breakout signals")
+    print(f"{int(signals.sum())} signals remain after session filter ({session.name})")
 
     challenge = DEFAULT_CHALLENGE
 
@@ -48,6 +59,9 @@ def main() -> None:
     print(f"Profit target:   {challenge.profit_target_pct:.2%}")
     print(f"Max total loss:  {challenge.max_total_loss_pct:.2%}")
     print(f"Daily loss cap:  {challenge.daily_loss_pct:.2%}")
+    print(
+        f"Session:         {session.name} (weekdays={session.allowed_weekdays}, hours={session.start_hour}-{session.end_hour})"
+    )
 
     print(f"\nInitial equity:  {result.initial_equity:,.2f}")
     print(f"Final equity:    {result.final_equity:,.2f}")
