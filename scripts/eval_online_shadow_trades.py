@@ -15,7 +15,7 @@ def load_trades(path: Path, days: int) -> pd.DataFrame:
         return df
     df["entry_time"] = pd.to_datetime(df["entry_time"])
     df["exit_time"] = pd.to_datetime(df["exit_time"])
-    cutoff = datetime.now() - timedelta(days=days)
+    cutoff = pd.Timestamp.now(tz='UTC') - timedelta(days=days)
     return df[df["entry_time"] >= cutoff].sort_values("entry_time")
 
 
