@@ -174,3 +174,30 @@ class Mt5BrokerAdapter(BrokerAdapter):
             )
             return False
         return True
+
+
+# MT5 historical fetch helper
+def fetch_symbol_ohlc_mt5(symbol: str, timeframe, start, end):
+    """
+    Fetch OHLC from MT5 between start and end for the given symbol/timeframe.
+    Returns a DataFrame indexed by datetime with ['open','high','low','close'].
+    Assumes MT5 is initialized and logged in elsewhere.
+    """
+    if mt5 is None:
+        raise RuntimeError("MetaTrader5 package is not installed.")
+
+    logger = get_logger(__name__)
+
+    rates = mt5.copy_rates_range(symbol, timeframe, start, end)
+    if rates is None or len(rates) == 0:
+        logger.error("No MT5 rates returned for %s between %s and %s", symbol, start, end)
+        raise RuntimeError("No MT5 rates returned")
+
+    import pandas as pd
+
+    df = pd.DataFrame(rates)
+    df["time"] = pd.to_datetime(df["time"], unit="s")
+    df = df.set_index("time")
+    df = df.rename(columns=str.lower)[["open", "high", "low", "close"]]
+    df = df.dropna()
+    return df

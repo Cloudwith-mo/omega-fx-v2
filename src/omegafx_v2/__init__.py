@@ -31,6 +31,7 @@ from .config import (
     XAUUSD_SPEC,
 )
 from .data import fetch_ohlc, fetch_symbol_ohlc, fetch_xauusd_ohlc
+from .data_mt5 import fetch_symbol_ohlc_mt5
 from .signals import (
     build_atr_filter,
     build_mean_reversion_signals,
@@ -41,7 +42,7 @@ from .signals import (
     generate_breakout_signals,
 )
 from .strategy import PlannedTrade, plan_single_trade
-from .mt5_adapter import Mt5BrokerAdapter, Mt5ConnectionConfig
+from .mt5_adapter import Mt5BrokerAdapter, Mt5ConnectionConfig, fetch_symbol_ohlc_mt5
 from .sim import (
     EvaluationBatchResult,
     EvaluationResult,
@@ -96,11 +97,13 @@ __all__ = [
     "generate_breakout_signals",
     "Mt5BrokerAdapter",
     "Mt5ConnectionConfig",
+    "fetch_symbol_ohlc_mt5",
     "run_profile_summary",
     "run_portfolio_summary",
     "fetch_ohlc",
     "fetch_symbol_ohlc",
     "fetch_xauusd_ohlc",
+    "fetch_symbol_ohlc_mt5",
     "PlannedTrade",
     "plan_single_trade",
     "TradeOutcome",
