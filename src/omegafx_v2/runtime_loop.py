@@ -3,6 +3,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
 from typing import Optional, List, Iterable, Tuple
+import json
+import os
+from datetime import datetime
 
 import pandas as pd
 
@@ -10,6 +13,7 @@ from .config import StrategyProfile
 from .profile_summary import _build_signals_for_profile
 from .sim import simulate_trade_path
 from .strategy import plan_single_trade
+from .logger import get_logger
 
 
 class BrokerAdapter(ABC):
@@ -40,6 +44,7 @@ class LiveRuntimeState:
     equity: float
     trades_executed: int = 0
     daily_pnl: Optional[dict] = None
+    last_bar_time: Optional[pd.Timestamp] = None
 
 
 def run_live_runtime(
@@ -47,6 +52,8 @@ def run_live_runtime(
     bar_stream: Iterable[Tuple[pd.Timestamp, pd.Series]],
     broker: BrokerAdapter,
     initial_equity: float = 10_000.0,
+    state_file: str = "runtime_state.json",
+    heartbeat_every: int = 50,
 ) -> LiveRuntimeState:
     """
     Live-mode execution loop over a bar stream.
@@ -60,6 +67,7 @@ def run_live_runtime(
     equity = initial_equity
     daily_pnl: dict = {}
     trades_executed = 0
+    last_processed = None
 
     target_equity = initial_equity * (1.0 + profile.challenge.profit_target_pct)
     loss_limit_equity = initial_equity * (1.0 - profile.challenge.max_total_loss_pct)
@@ -68,8 +76,27 @@ def run_live_runtime(
         profile.strategy,
         profit_target_pct=profile.challenge.profit_target_pct,
     )
+    logger = get_logger()
 
-    for ts, row in bar_stream:
+    if state_file and os.path.exists(state_file):
+        try:
+            with open(state_file, "r") as f:
+                saved = json.load(f)
+            equity = saved.get("equity", equity)
+            daily_pnl = saved.get("daily_pnl", daily_pnl)
+            ts_saved = saved.get("last_bar_time")
+            if ts_saved:
+                last_processed = pd.to_datetime(ts_saved)
+        except Exception as exc:  # pragma: no cover
+            logger.warning(f"Failed to load runtime state: {exc}")
+
+    for idx_stream, (ts, row) in enumerate(bar_stream):
+        if last_processed is not None and ts <= last_processed:
+            continue
+        if historical_idx and ts <= historical_idx[-1]:
+            logger.warning("Bar feed stalled or duplicate timestamp detected; stopping.")
+            break
+
         historical_idx.append(ts)
         historical_rows.append(row[["open", "high", "low", "close"]])
 
@@ -126,4 +153,27 @@ def run_live_runtime(
             f"Trade closed: reason={outcome.exit_reason}, pnl={outcome.pnl:.2f}, equity={equity:.2f}"
         )
 
-    return LiveRuntimeState(equity=equity, trades_executed=trades_executed, daily_pnl=daily_pnl)
+        if state_file:
+            try:
+                with open(state_file, "w") as f:
+                    json.dump(
+                        {
+                            "equity": equity,
+                            "last_bar_time": ts.isoformat(),
+                            "daily_pnl": daily_pnl,
+                            "profile": profile.name,
+                        },
+                        f,
+                    )
+            except Exception as exc:  # pragma: no cover
+                logger.warning(f"Failed to persist runtime state: {exc}")
+
+        if heartbeat_every and idx_stream % heartbeat_every == 0:
+            logger.info(f"Heartbeat OK: bars={idx_stream}, equity={equity:.2f}")
+
+    return LiveRuntimeState(
+        equity=equity,
+        trades_executed=trades_executed,
+        daily_pnl=daily_pnl,
+        last_bar_time=historical_idx[-1] if historical_idx else None,
+    )

@@ -10,6 +10,7 @@ except ImportError:  # pragma: no cover - optional dependency
 
 from .runtime_loop import BrokerAdapter
 from .strategy import PlannedTrade
+from .logger import get_logger
 
 
 @dataclass
@@ -20,23 +21,16 @@ class Mt5ConnectionConfig:
 
 
 class Mt5BrokerAdapter(BrokerAdapter):
-    def __init__(self, conn: Mt5ConnectionConfig, symbol: str):
+    def __init__(self, conn: Mt5ConnectionConfig, symbol: str, dry_run: bool = False):
         if mt5 is None:
             raise RuntimeError("MetaTrader5 package is not installed.")
 
         self.conn = conn
         self.symbol = symbol
+        self.dry_run = dry_run
+        self.logger = get_logger()
 
-        if not mt5.initialize():
-            raise RuntimeError(f"MT5 initialize() failed, error code: {mt5.last_error()}")
-
-        authorized = mt5.login(
-            login=self.conn.login,
-            password=self.conn.password,
-            server=self.conn.server,
-        )
-        if not authorized:
-            raise RuntimeError(f"MT5 login failed, error: {mt5.last_error()}")
+        self._connect()
 
     def send_order(self, trade: PlannedTrade) -> bool:
         """
@@ -44,6 +38,10 @@ class Mt5BrokerAdapter(BrokerAdapter):
         """
         if mt5 is None:
             return False
+
+        if self.dry_run:
+            self.log(f"[DRY RUN] Would send order: {trade}")
+            return True
 
         # Ensure symbol is selected
         if not mt5.symbol_select(trade.symbol, True):
@@ -72,14 +70,41 @@ class Mt5BrokerAdapter(BrokerAdapter):
 
         if result.retcode != mt5.TRADE_RETCODE_DONE:
             self.log(f"MT5 order failed: retcode={result.retcode}, comment={result.comment}")
+            if result.retcode in {
+                mt5.TRADE_RETCODE_NO_CONNECTION,
+                mt5.TRADE_RETCODE_SERVER_BUSY,
+                mt5.TRADE_RETCODE_TRADE_DISABLED,
+                mt5.TRADE_RETCODE_TERMINAL_OFFLINE,
+            }:
+                self.log("Attempting MT5 reconnect and retry...")
+                if self._connect():
+                    retry = mt5.order_send(request)
+                    if retry and retry.retcode == mt5.TRADE_RETCODE_DONE:
+                        self.log(f"Order sent after retry: ticket={retry.order}")
+                        return True
+                    self.log(f"Retry failed: retcode={getattr(retry,'retcode',None)}")
             return False
 
         self.log(f"Order sent: ticket={result.order}, price={price}")
         return True
 
     def log(self, message: str) -> None:
-        print(f"[MT5Broker] {message}")
+        self.logger.info(f"[MT5Broker] {message}")
 
     def close(self) -> None:
         if mt5:
             mt5.shutdown()
+
+    def _connect(self) -> bool:
+        if not mt5.initialize():
+            self.log(f"MT5 initialize() failed, error code: {mt5.last_error()}")
+            return False
+        authorized = mt5.login(
+            login=self.conn.login,
+            password=self.conn.password,
+            server=self.conn.server,
+        )
+        if not authorized:
+            self.log(f"MT5 login failed, error: {mt5.last_error()}")
+            return False
+        return True
