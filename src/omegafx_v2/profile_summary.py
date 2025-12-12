@@ -46,6 +46,7 @@ def run_profile_summary(
         profile.symbol_key,
         start=start.isoformat(),
         end=end.isoformat(),
+        interval=profile.timeframe,
     )
 
     signals = _build_signals_for_profile(ohlc, profile)

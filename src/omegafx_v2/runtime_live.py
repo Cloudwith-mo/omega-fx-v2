@@ -11,6 +11,7 @@ from .data import fetch_symbol_ohlc
 from .sim import simulate_trade_path
 from .config import DEFAULT_COSTS
 from .profile_summary import _build_signals_for_profile
+from .shadow_logger import ShadowTradeLogger
 
 
 @dataclass
@@ -52,6 +53,7 @@ def run_offline_live_simulation(
         profile.symbol_key,
         start=start.isoformat(),
         end=end.isoformat(),
+        interval=getattr(profile, "timeframe", "1h"),
     )
 
     signals = _build_signals_for_profile(ohlc, profile)
@@ -63,6 +65,7 @@ def run_offline_live_simulation(
 
     equity = initial_equity
     trades: List[LiveTrade] = []
+    logger = ShadowTradeLogger()
 
     target_equity = initial_equity * (1.0 + profile.challenge.profit_target_pct)
     loss_limit_equity = initial_equity * (1.0 - profile.challenge.max_total_loss_pct)
@@ -104,18 +107,19 @@ def run_offline_live_simulation(
             day = dates[idx]
             daily_pnl[day] = daily_pnl.get(day, 0.0) + outcome.pnl
 
-        trades.append(
-            LiveTrade(
-                entry_time=outcome.entry_time,
-                exit_time=outcome.exit_time,
-                entry_price=outcome.entry_price,
-                exit_price=outcome.exit_price,
-                exit_reason=outcome.exit_reason,
-                pnl=outcome.pnl,
-                pnl_pct=outcome.pnl_pct,
-                equity_after=equity_after,
-            )
+        live_trade = LiveTrade(
+            entry_time=outcome.entry_time,
+            exit_time=outcome.exit_time,
+            entry_price=outcome.entry_price,
+            exit_price=outcome.exit_price,
+            exit_reason=outcome.exit_reason,
+            pnl=outcome.pnl,
+            pnl_pct=outcome.pnl_pct,
+            equity_after=equity_after,
         )
+        
+        trades.append(live_trade)
+        logger.log_trade(live_trade, profile.symbol_key, equity)
 
         equity = equity_after
 

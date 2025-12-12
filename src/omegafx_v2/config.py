@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Sequence, Union
 
 
 @dataclass(frozen=True)
@@ -114,12 +114,16 @@ DEFAULT_STRATEGY = StrategyConfig(
 )
 
 
+SignalConfigType = Union[SignalConfig, MeanReversionSignalConfig]
+
+
 @dataclass(frozen=True)
 class StrategyProfile:
     name: str
     symbol_key: str
+    timeframe: str
     strategy: StrategyConfig
-    signals: SignalConfig | MeanReversionSignalConfig
+    signals: SignalConfigType
     challenge: ChallengeProfile
     costs: TradingCosts
     session: TradingSession
@@ -128,6 +132,7 @@ class StrategyProfile:
 DEFAULT_PROFILE_BREAKOUT_V1 = StrategyProfile(
     name="XAU_H1_Breakout_V1",
     symbol_key="XAUUSD",
+    timeframe="1h",
     strategy=DEFAULT_STRATEGY,
     signals=DEFAULT_SIGNAL_CONFIG,
     challenge=DEFAULT_CHALLENGE,
@@ -138,6 +143,7 @@ DEFAULT_PROFILE_BREAKOUT_V1 = StrategyProfile(
 DEFAULT_PROFILE_XAU_MR_V1 = StrategyProfile(
     name="XAU_H1_MeanReversion_V1",
     symbol_key="XAUUSD",
+    timeframe="1h",
     strategy=DEFAULT_STRATEGY,
     signals=DEFAULT_MR_SIGNAL_CONFIG,
     challenge=DEFAULT_CHALLENGE,
@@ -148,6 +154,24 @@ DEFAULT_PROFILE_XAU_MR_V1 = StrategyProfile(
 DEFAULT_PROFILE_USDJPY_MR_V1 = StrategyProfile(
     name="USDJPY_H1_MeanReversion_V1",
     symbol_key="USDJPY",
+    timeframe="1h",
+    strategy=DEFAULT_STRATEGY,
+    signals=MeanReversionSignalConfig(
+        ma_period=50,
+        atr_period=14,
+        entry_k=1.0,
+        exit_k=0.0,
+        h4_sma_period=50,
+    ),
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=DEFAULT_SESSION,
+)
+
+DEFAULT_PROFILE_USDJPY_MR_M15_V1 = StrategyProfile(
+    name="USDJPY_M15_MeanReversion_V1",
+    symbol_key="USDJPY",
+    timeframe="15m",
     strategy=DEFAULT_STRATEGY,
     signals=MeanReversionSignalConfig(
         ma_period=50,
