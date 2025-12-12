@@ -5,6 +5,8 @@ import pandas as pd
 from .config import (
     DEFAULT_SESSION,
     DEFAULT_SIGNAL_CONFIG,
+    DEFAULT_MR_SIGNAL_CONFIG,
+    MeanReversionSignalConfig,
     SignalConfig,
     TradingSession,
 )
@@ -129,3 +131,34 @@ def build_signals(
 
     signals = raw_signals & session_mask & atr_mask & h4_trend_mask
     return signals
+
+
+def build_mean_reversion_signals(
+    ohlc: pd.DataFrame,
+    signal_config: MeanReversionSignalConfig = DEFAULT_MR_SIGNAL_CONFIG,
+    session: TradingSession = DEFAULT_SESSION,
+) -> pd.Series:
+    """
+    Mean-reversion long-only signals using MA/ATR pullback plus session and trend filters.
+    """
+    if not isinstance(ohlc.index, pd.DatetimeIndex):
+        raise ValueError("ohlc index must be DatetimeIndex")
+
+    close = ohlc["close"]
+
+    ma = close.rolling(signal_config.ma_period).mean()
+    atr = compute_atr(ohlc, period=signal_config.atr_period)
+    atr_safe = atr.replace(0, pd.NA)
+    z = (ma - close) / atr_safe
+
+    raw_entry = z >= signal_config.entry_k
+
+    if signal_config.exit_k is not None:
+        near_mean = z <= signal_config.exit_k
+        raw_entry = raw_entry & ~near_mean
+
+    session_mask = build_session_mask(ohlc, session=session)
+    h4_up = compute_h4_sma_filter(ohlc, sma_period=signal_config.h4_sma_period)
+
+    signals = raw_entry & session_mask & h4_up
+    return signals.fillna(False)

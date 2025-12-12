@@ -79,6 +79,24 @@ DEFAULT_SIGNAL_CONFIG = SignalConfig(
 
 
 @dataclass(frozen=True)
+class MeanReversionSignalConfig:
+    ma_period: int = 50
+    atr_period: int = 14
+    entry_k: float = 1.0
+    exit_k: float = 0.0
+    h4_sma_period: int = 50
+
+
+DEFAULT_MR_SIGNAL_CONFIG = MeanReversionSignalConfig(
+    ma_period=50,
+    atr_period=14,
+    entry_k=1.0,
+    exit_k=0.0,
+    h4_sma_period=50,
+)
+
+
+@dataclass(frozen=True)
 class StrategyConfig:
     symbol: str
     fixed_lot_size: float
@@ -110,6 +128,15 @@ DEFAULT_PROFILE_BREAKOUT_V1 = StrategyProfile(
     name="XAU_H1_Breakout_V1",
     strategy=DEFAULT_STRATEGY,
     signals=DEFAULT_SIGNAL_CONFIG,
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=DEFAULT_SESSION,
+)
+
+DEFAULT_PROFILE_XAU_MR_V1 = StrategyProfile(
+    name="XAU_H1_MeanReversion_V1",
+    strategy=DEFAULT_STRATEGY,
+    signals=DEFAULT_MR_SIGNAL_CONFIG,
     challenge=DEFAULT_CHALLENGE,
     costs=DEFAULT_COSTS,
     session=DEFAULT_SESSION,

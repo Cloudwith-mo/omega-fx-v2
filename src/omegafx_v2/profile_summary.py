@@ -3,10 +3,31 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import date, timedelta
 
-from .config import StrategyProfile
+from .config import (
+    MeanReversionSignalConfig,
+    SignalConfig,
+    StrategyProfile,
+)
 from .data import fetch_xauusd_ohlc
-from .signals import build_signals
+from .signals import build_mean_reversion_signals, build_signals
 from .sim import run_randomized_signal_evaluations, run_signal_driven_evaluation
+
+
+def _build_signals_for_profile(ohlc, profile: StrategyProfile):
+    sig_cfg = profile.signals
+    if isinstance(sig_cfg, SignalConfig):
+        return build_signals(
+            ohlc,
+            signal_config=sig_cfg,
+            session=profile.session,
+        )
+    if isinstance(sig_cfg, MeanReversionSignalConfig):
+        return build_mean_reversion_signals(
+            ohlc,
+            signal_config=sig_cfg,
+            session=profile.session,
+        )
+    raise TypeError(f"Unsupported signals config type: {type(sig_cfg)!r}")
 
 
 def run_profile_summary(
@@ -23,11 +44,7 @@ def run_profile_summary(
 
     ohlc = fetch_xauusd_ohlc(start.isoformat(), end.isoformat())
 
-    signals = build_signals(
-        ohlc,
-        signal_config=profile.signals,
-        session=profile.session,
-    )
+    signals = _build_signals_for_profile(ohlc, profile)
 
     strategy_cfg = replace(
         profile.strategy,

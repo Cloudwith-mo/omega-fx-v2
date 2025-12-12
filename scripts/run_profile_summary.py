@@ -1,9 +1,12 @@
-from omegafx_v2.config import DEFAULT_PROFILE_BREAKOUT_V1
+from omegafx_v2.config import (
+    DEFAULT_PROFILE_BREAKOUT_V1,
+    DEFAULT_PROFILE_XAU_MR_V1,
+)
 from omegafx_v2.profile_summary import run_profile_summary
 
 
 def main() -> None:
-    profile = DEFAULT_PROFILE_BREAKOUT_V1
+    profile = DEFAULT_PROFILE_XAU_MR_V1  # switch between profiles here
 
     print(f"=== Strategy Profile: {profile.name} ===")
     print("Signals:", profile.signals)
