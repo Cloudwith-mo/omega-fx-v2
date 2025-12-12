@@ -15,7 +15,12 @@ from omegafx_v2.config import (
     DEFAULT_STRATEGY,
 )
 from omegafx_v2.data import fetch_xauusd_ohlc
-from omegafx_v2.signals import build_session_mask, generate_breakout_signals
+from omegafx_v2.signals import (
+    build_atr_filter,
+    build_session_mask,
+    compute_atr,
+    generate_breakout_signals,
+)
 from omegafx_v2.sim import run_signal_driven_evaluation
 
 
@@ -30,10 +35,14 @@ def main() -> None:
     session_mask = build_session_mask(ohlc, session=session)
 
     raw_signals = generate_breakout_signals(ohlc, lookback=20)
-    signals = raw_signals & session_mask
+    atr = compute_atr(ohlc, period=14)
+    atr_mask = build_atr_filter(atr, percentile=50)
+
+    signals = raw_signals & session_mask & atr_mask
 
     print(f"Generated {int(raw_signals.sum())} raw breakout signals")
-    print(f"{int(signals.sum())} signals remain after session filter ({session.name})")
+    print(f"{int(raw_signals.sum() - signals.sum())} signals removed by filters")
+    print(f"{int(signals.sum())} signals remain after session + ATR filter ({session.name})")
 
     challenge = DEFAULT_CHALLENGE
 

@@ -43,3 +43,36 @@ def build_session_mask(
 
     mask = allowed_days & in_hours
     return pd.Series(mask, index=ohlc.index)
+
+
+def compute_atr(ohlc: pd.DataFrame, period: int = 14) -> pd.Series:
+    """
+    Compute Average True Range (ATR) over a given period.
+    """
+    if not {"high", "low", "close"}.issubset(ohlc.columns):
+        raise ValueError("ohlc must contain 'high', 'low', and 'close' columns")
+
+    high = ohlc["high"]
+    low = ohlc["low"]
+    close_prev = ohlc["close"].shift(1)
+
+    tr1 = high - low
+    tr2 = (high - close_prev).abs()
+    tr3 = (low - close_prev).abs()
+
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr = tr.rolling(period).mean()
+    return atr
+
+
+def build_atr_filter(
+    atr: pd.Series,
+    percentile: float = 50,
+) -> pd.Series:
+    """
+    Boolean mask where ATR is above a given percentile (e.g., top half of vols).
+    """
+    if atr.empty:
+        return pd.Series([], dtype=bool)
+    threshold = atr.quantile(percentile / 100)
+    return atr > threshold

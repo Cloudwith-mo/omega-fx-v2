@@ -13,7 +13,12 @@ from .config import (
     XAUUSD_SPEC,
 )
 from .data import fetch_xauusd_ohlc
-from .signals import build_session_mask, generate_breakout_signals
+from .signals import (
+    build_atr_filter,
+    build_session_mask,
+    compute_atr,
+    generate_breakout_signals,
+)
 from .strategy import PlannedTrade, plan_single_trade
 from .sim import (
     EvaluationBatchResult,
@@ -37,7 +42,9 @@ __all__ = [
     "DEFAULT_CHALLENGE",
     "DEFAULT_SESSION",
     "XAUUSD_SPEC",
+    "build_atr_filter",
     "build_session_mask",
+    "compute_atr",
     "generate_breakout_signals",
     "fetch_xauusd_ohlc",
     "PlannedTrade",
