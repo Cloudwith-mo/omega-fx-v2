@@ -1,9 +1,9 @@
-from omegafx_v2.config import DEFAULT_PORTFOLIO_USDJPY_MR
+from omegafx_v2.config import DEFAULT_PORTFOLIO_USDJPY_V2
 from omegafx_v2.portfolio_summary import run_portfolio_summary
 
 
 def main() -> None:
-    portfolio = DEFAULT_PORTFOLIO_USDJPY_MR
+    portfolio = DEFAULT_PORTFOLIO_USDJPY_V2
 
     metrics = run_portfolio_summary(
         portfolio=portfolio,

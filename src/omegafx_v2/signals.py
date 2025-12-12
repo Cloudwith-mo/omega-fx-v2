@@ -6,7 +6,9 @@ from .config import (
     DEFAULT_SESSION,
     DEFAULT_SIGNAL_CONFIG,
     DEFAULT_MR_SIGNAL_CONFIG,
+    DEFAULT_TREND_SIGNAL_CONFIG,
     MeanReversionSignalConfig,
+    TrendContinuationSignalConfig,
     SignalConfig,
     TradingSession,
 )
@@ -161,4 +163,41 @@ def build_mean_reversion_signals(
     h4_up = compute_h4_sma_filter(ohlc, sma_period=signal_config.h4_sma_period)
 
     signals = raw_entry & session_mask & h4_up
+    return signals.fillna(False)
+
+
+def build_trend_signals(
+    ohlc: pd.DataFrame,
+    signal_config: TrendContinuationSignalConfig = DEFAULT_TREND_SIGNAL_CONFIG,
+    session: TradingSession = DEFAULT_SESSION,
+) -> pd.Series:
+    """
+    Long-only trend-continuation signals on M15 (or given timeframe):
+    - Uptrend: fast MA > slow MA
+    - Entry: close crosses above fast MA after being at/under it, with ATR + H4 trend + session filters.
+    """
+    if not isinstance(ohlc.index, pd.DatetimeIndex):
+        raise ValueError("ohlc index must be DatetimeIndex")
+
+    close = ohlc["close"]
+
+    ma_fast = close.rolling(signal_config.fast_ma_period).mean()
+    ma_slow = close.rolling(signal_config.slow_ma_period).mean()
+    uptrend = ma_fast > ma_slow
+
+    prev_close = close.shift(1)
+    prev_ma_fast = ma_fast.shift(1)
+    crossed_up = (close > ma_fast) & (prev_close <= prev_ma_fast)
+
+    atr = compute_atr(ohlc, period=signal_config.atr_period)
+    atr_mask = build_atr_filter(atr, percentile=signal_config.atr_percentile)
+
+    h4_up = compute_h4_sma_filter(
+        ohlc,
+        sma_period=signal_config.h4_sma_period,
+    )
+
+    session_mask = build_session_mask(ohlc, session=session)
+
+    signals = crossed_up & uptrend & atr_mask & h4_up & session_mask
     return signals.fillna(False)

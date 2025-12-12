@@ -97,6 +97,24 @@ DEFAULT_MR_SIGNAL_CONFIG = MeanReversionSignalConfig(
 
 
 @dataclass(frozen=True)
+class TrendContinuationSignalConfig:
+    fast_ma_period: int = 20
+    slow_ma_period: int = 50
+    atr_period: int = 14
+    atr_percentile: int = 50
+    h4_sma_period: int = 50
+
+
+DEFAULT_TREND_SIGNAL_CONFIG = TrendContinuationSignalConfig(
+    fast_ma_period=20,
+    slow_ma_period=50,
+    atr_period=14,
+    atr_percentile=50,
+    h4_sma_period=50,
+)
+
+
+@dataclass(frozen=True)
 class StrategyConfig:
     symbol: str
     fixed_lot_size: float
@@ -114,7 +132,7 @@ DEFAULT_STRATEGY = StrategyConfig(
 )
 
 
-SignalConfigType = Union[SignalConfig, MeanReversionSignalConfig]
+SignalConfigType = Union[SignalConfig, MeanReversionSignalConfig, TrendContinuationSignalConfig]
 
 
 @dataclass(frozen=True)
@@ -193,11 +211,32 @@ DEFAULT_PROFILE_USDJPY_MR_M15_V1 = StrategyProfile(
     session=DEFAULT_SESSION,
 )
 
+DEFAULT_PROFILE_USDJPY_TREND_M15_V1 = StrategyProfile(
+    name="USDJPY_M15_TrendCont_V1",
+    symbol_key="USDJPY",
+    timeframe="15m",
+    strategy=DEFAULT_STRATEGY,
+    signals=DEFAULT_TREND_SIGNAL_CONFIG,
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=DEFAULT_SESSION,
+)
+
 DEFAULT_PORTFOLIO_USDJPY_MR = PortfolioProfile(
     name="USDJPY_MR_Portfolio_V1",
     strategies=[
         DEFAULT_PROFILE_USDJPY_MR_V1,
         DEFAULT_PROFILE_USDJPY_MR_M15_V1,
+    ],
+    portfolio_daily_loss_pct=0.03,
+    portfolio_max_loss_pct=0.06,
+)
+
+DEFAULT_PORTFOLIO_USDJPY_V2 = PortfolioProfile(
+    name="USDJPY_Portfolio_V2",
+    strategies=[
+        DEFAULT_PROFILE_USDJPY_MR_M15_V1,
+        DEFAULT_PROFILE_USDJPY_TREND_M15_V1,
     ],
     portfolio_daily_loss_pct=0.03,
     portfolio_max_loss_pct=0.06,
