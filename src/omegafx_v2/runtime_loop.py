@@ -5,7 +5,8 @@ from dataclasses import dataclass, replace
 from typing import Optional, List, Iterable, Tuple
 import json
 import os
-from datetime import datetime
+import csv
+from pathlib import Path
 
 import pandas as pd
 
@@ -54,6 +55,7 @@ def run_live_runtime(
     initial_equity: float = 10_000.0,
     state_file: str = "runtime_state.json",
     heartbeat_every: int = 50,
+    shadow_trades_path: str = "logs/shadow_trades.csv",
 ) -> LiveRuntimeState:
     """
     Live-mode execution loop over a bar stream.
@@ -152,6 +154,46 @@ def run_live_runtime(
         broker.log(
             f"Trade closed: reason={outcome.exit_reason}, pnl={outcome.pnl:.2f}, equity={equity:.2f}"
         )
+
+        if shadow_trades_path:
+            try:
+                path = Path(shadow_trades_path)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                write_header = not path.exists()
+                with path.open("a", newline="") as f:
+                    writer = csv.DictWriter(
+                        f,
+                        fieldnames=[
+                            "profile",
+                            "symbol",
+                            "entry_time",
+                            "exit_time",
+                            "entry_price",
+                            "exit_price",
+                            "exit_reason",
+                            "pnl",
+                            "pnl_pct",
+                            "equity_after",
+                        ],
+                    )
+                    if write_header:
+                        writer.writeheader()
+                    writer.writerow(
+                        {
+                            "profile": profile.name,
+                            "symbol": profile.symbol_key,
+                            "entry_time": outcome.entry_time.isoformat(),
+                            "exit_time": outcome.exit_time.isoformat(),
+                            "entry_price": outcome.entry_price,
+                            "exit_price": outcome.exit_price,
+                            "exit_reason": outcome.exit_reason,
+                            "pnl": outcome.pnl,
+                            "pnl_pct": outcome.pnl_pct,
+                            "equity_after": equity,
+                        }
+                    )
+            except Exception as exc:  # pragma: no cover
+                logger.warning(f"Failed to append shadow trade: {exc}")
 
         if state_file:
             try:
