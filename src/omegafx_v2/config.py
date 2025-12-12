@@ -90,7 +90,7 @@ class MeanReversionSignalConfig:
 DEFAULT_MR_SIGNAL_CONFIG = MeanReversionSignalConfig(
     ma_period=50,
     atr_period=14,
-    entry_k=1.0,
+    entry_k=1.5,
     exit_k=0.0,
     h4_sma_period=50,
 )
