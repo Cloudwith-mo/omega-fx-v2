@@ -11,11 +11,13 @@ from .config import (
     DEFAULT_PROFILE_XAU_MR_V1,
     DEFAULT_PROFILE_USDJPY_MR_V1,
     DEFAULT_PROFILE_USDJPY_MR_M15_V1,
+    DEFAULT_PORTFOLIO_USDJPY_MR,
     ChallengeProfile,
     InstrumentSpec,
     MeanReversionSignalConfig,
     SignalConfig,
     StrategyConfig,
+    PortfolioProfile,
     StrategyProfile,
     TradingCosts,
     TradingSession,
@@ -44,6 +46,7 @@ from .sim import (
     simulate_trade_path,
 )
 from .profile_summary import run_profile_summary
+from .portfolio_summary import run_portfolio_summary
 from .runtime_live import LiveRunResult, LiveTrade, run_offline_live_simulation
 from .runtime_loop import BrokerAdapter, DummyBrokerAdapter, LiveRuntimeState, run_live_runtime
 from .logger import get_logger
@@ -64,10 +67,12 @@ __all__ = [
     "DEFAULT_PROFILE_XAU_MR_V1",
     "DEFAULT_PROFILE_USDJPY_MR_V1",
     "DEFAULT_PROFILE_USDJPY_MR_M15_V1",
+    "DEFAULT_PORTFOLIO_USDJPY_MR",
     "XAUUSD_SPEC",
     "MeanReversionSignalConfig",
     "SignalConfig",
     "StrategyProfile",
+    "PortfolioProfile",
     "build_atr_filter",
     "build_mean_reversion_signals",
     "build_signals",
@@ -78,6 +83,7 @@ __all__ = [
     "Mt5BrokerAdapter",
     "Mt5ConnectionConfig",
     "run_profile_summary",
+    "run_portfolio_summary",
     "fetch_ohlc",
     "fetch_symbol_ohlc",
     "fetch_xauusd_ohlc",

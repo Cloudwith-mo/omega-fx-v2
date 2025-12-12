@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Sequence, Union
+from typing import Sequence, Union, List
 
 
 @dataclass(frozen=True)
@@ -129,6 +129,14 @@ class StrategyProfile:
     session: TradingSession
 
 
+@dataclass(frozen=True)
+class PortfolioProfile:
+    name: str
+    strategies: List[StrategyProfile]
+    portfolio_daily_loss_pct: float | None = None
+    portfolio_max_loss_pct: float | None = None
+
+
 DEFAULT_PROFILE_BREAKOUT_V1 = StrategyProfile(
     name="XAU_H1_Breakout_V1",
     symbol_key="XAUUSD",
@@ -183,4 +191,14 @@ DEFAULT_PROFILE_USDJPY_MR_M15_V1 = StrategyProfile(
     challenge=DEFAULT_CHALLENGE,
     costs=DEFAULT_COSTS,
     session=DEFAULT_SESSION,
+)
+
+DEFAULT_PORTFOLIO_USDJPY_MR = PortfolioProfile(
+    name="USDJPY_MR_Portfolio_V1",
+    strategies=[
+        DEFAULT_PROFILE_USDJPY_MR_V1,
+        DEFAULT_PROFILE_USDJPY_MR_M15_V1,
+    ],
+    portfolio_daily_loss_pct=0.03,
+    portfolio_max_loss_pct=0.06,
 )
