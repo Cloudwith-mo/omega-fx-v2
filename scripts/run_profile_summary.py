@@ -1,11 +1,12 @@
-from omegafx_v2.config import DEFAULT_PROFILE_XAU_MR_V1
+from omegafx_v2.config import DEFAULT_PROFILE_USDJPY_MR_V1
 from omegafx_v2.profile_summary import run_profile_summary
 
 
 def main() -> None:
-    profile = DEFAULT_PROFILE_XAU_MR_V1
+    profile = DEFAULT_PROFILE_USDJPY_MR_V1
 
     print(f"=== Strategy Profile (V1): {profile.name} ===")
+    print(f"Symbol:          {profile.symbol_key}")
     print("Signals:", profile.signals)
     print("Challenge:", profile.challenge)
     print("Costs:", profile.costs)

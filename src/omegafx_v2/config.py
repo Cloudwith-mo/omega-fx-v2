@@ -144,3 +144,19 @@ DEFAULT_PROFILE_XAU_MR_V1 = StrategyProfile(
     costs=DEFAULT_COSTS,
     session=DEFAULT_SESSION,
 )
+
+DEFAULT_PROFILE_USDJPY_MR_V1 = StrategyProfile(
+    name="USDJPY_H1_MeanReversion_V1",
+    symbol_key="USDJPY",
+    strategy=DEFAULT_STRATEGY,
+    signals=MeanReversionSignalConfig(
+        ma_period=50,
+        atr_period=14,
+        entry_k=1.0,
+        exit_k=0.0,
+        h4_sma_period=50,
+    ),
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=DEFAULT_SESSION,
+)
