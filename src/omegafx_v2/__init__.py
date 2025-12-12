@@ -31,6 +31,7 @@ from .signals import (
     generate_breakout_signals,
 )
 from .strategy import PlannedTrade, plan_single_trade
+from .mt5_adapter import Mt5BrokerAdapter, Mt5ConnectionConfig
 from .sim import (
     EvaluationBatchResult,
     EvaluationResult,
@@ -70,6 +71,8 @@ __all__ = [
     "compute_h4_sma_filter",
     "compute_atr",
     "generate_breakout_signals",
+    "Mt5BrokerAdapter",
+    "Mt5ConnectionConfig",
     "run_profile_summary",
     "fetch_ohlc",
     "fetch_symbol_ohlc",
