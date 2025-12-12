@@ -6,10 +6,12 @@ from .config import (
     DEFAULT_SESSION,
     DEFAULT_STRATEGY,
     DEFAULT_SIGNAL_CONFIG,
+    DEFAULT_PROFILE_BREAKOUT_V1,
     ChallengeProfile,
     InstrumentSpec,
     SignalConfig,
     StrategyConfig,
+    StrategyProfile,
     TradingCosts,
     TradingSession,
     XAUUSD_SPEC,
@@ -34,6 +36,7 @@ from .sim import (
     run_sequential_evaluation,
     simulate_trade_path,
 )
+from .profile_summary import run_profile_summary
 
 __all__ = [
     "StrategyConfig",
@@ -46,14 +49,17 @@ __all__ = [
     "DEFAULT_CHALLENGE",
     "DEFAULT_SESSION",
     "DEFAULT_SIGNAL_CONFIG",
+    "DEFAULT_PROFILE_BREAKOUT_V1",
     "XAUUSD_SPEC",
     "SignalConfig",
+    "StrategyProfile",
     "build_atr_filter",
     "build_signals",
     "build_session_mask",
     "compute_h4_sma_filter",
     "compute_atr",
     "generate_breakout_signals",
+    "run_profile_summary",
     "fetch_xauusd_ohlc",
     "PlannedTrade",
     "plan_single_trade",
