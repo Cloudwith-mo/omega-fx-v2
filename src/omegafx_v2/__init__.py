@@ -19,7 +19,7 @@ from .config import (
     TradingSession,
     XAUUSD_SPEC,
 )
-from .data import fetch_xauusd_ohlc
+from .data import fetch_ohlc, fetch_symbol_ohlc, fetch_xauusd_ohlc
 from .signals import (
     build_atr_filter,
     build_mean_reversion_signals,
@@ -68,6 +68,8 @@ __all__ = [
     "compute_atr",
     "generate_breakout_signals",
     "run_profile_summary",
+    "fetch_ohlc",
+    "fetch_symbol_ohlc",
     "fetch_xauusd_ohlc",
     "PlannedTrade",
     "plan_single_trade",
