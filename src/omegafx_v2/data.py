@@ -1,66 +1,62 @@
-from __future__ import annotations
-
 import pandas as pd
-import yfinance as yf
+from pathlib import Path
 
 
-def _normalize_df(df: pd.DataFrame) -> pd.DataFrame:
-    if df.empty:
-        return df
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    df = df.rename(columns=str.lower)[["open", "high", "low", "close"]]
-    df = df.dropna()
-    if not isinstance(df.index, pd.DatetimeIndex):
-        df.index = pd.to_datetime(df.index)
-    return df
-
-
-def fetch_ohlc(symbol: str, start: str, end: str, interval: str = "1h") -> pd.DataFrame:
-    df = yf.download(
-        symbol,
-        start=start,
-        end=end,
-        interval=interval,
-        progress=False,
-    )
-    return _normalize_df(df)
-
-
-def fetch_symbol_ohlc(symbol_key: str, start: str, end: str, interval: str = "1h") -> pd.DataFrame:
+def load_ohlc_csv(path: Path, timeframe: str, tz: str = "UTC") -> pd.DataFrame:
     """
-    Fetch OHLC data for a logical symbol key using yfinance tickers.
+    Load OHLCV from CSV with columns: time, open, high, low, close, volume.
+    - Parses time to datetime (tz-aware).
+    - Sets index to UTC timestamp.
+    - Resamples to requested timeframe if needed (supports M1, M5, M15, H1).
     """
-    # yfinance intraday intervals are limited; cap range to 60 days for minute/hour intervals.
-    if interval.lower().endswith("m"):
-        end_dt = pd.to_datetime(end)
-        start_dt = pd.to_datetime(start)
-        max_span = pd.Timedelta(days=59)
-        if end_dt - start_dt > max_span:
-            start_dt = end_dt - max_span
-            start = start_dt.date().isoformat()
+    df = pd.read_csv(path)
+    if "time" not in df.columns:
+        raise ValueError("CSV must contain a 'time' column.")
+    df["time"] = pd.to_datetime(df["time"])
+    df = df.set_index("time")
+    if df.index.tz is None:
+        df.index = df.index.tz_localize(tz)
+    else:
+        df.index = df.index.tz_convert(tz)
 
-    mapping = {
-        "XAUUSD": ["XAUUSD=X", "XAU=X", "GC=F"],
-        "EURUSD": ["EURUSD=X"],
-        "GBPUSD": ["GBPUSD=X"],
-        "USDJPY": ["USDJPY=X"],
+    base = df[["open", "high", "low", "close", "volume"]].sort_index()
+
+    def resample_tf(df_in, rule):
+        o = df_in["open"].resample(rule).first()
+        h = df_in["high"].resample(rule).max()
+        l = df_in["low"].resample(rule).min()
+        c = df_in["close"].resample(rule).last()
+        v = df_in["volume"].resample(rule).sum()
+        out = pd.concat([o, h, l, c, v], axis=1).dropna()
+        out.columns = ["open", "high", "low", "close", "volume"]
+        return out
+
+    tf_map = {
+        "M1": "1min",
+        "M5": "5min",
+        "M15": "15min",
+        "H1": "1h",
+        "1m": "1min",
+        "5m": "5min",
+        "15m": "15min",
+        "60m": "1h",
     }
-    tickers = mapping.get(symbol_key.upper(), [symbol_key])
+    rule = tf_map.get(timeframe, None)
+    if rule is None:
+        raise ValueError(f"Unsupported timeframe {timeframe}")
 
-    for ticker in tickers:
-        df = fetch_ohlc(ticker, start=start, end=end, interval=interval)
-        if not df.empty:
-            return df
-
-    raise RuntimeError(f"No data returned for {symbol_key} in given range")
+    # If base is already M1, resample up as needed
+    return resample_tf(base, rule) if rule != "1min" else base
 
 
-def fetch_xauusd_ohlc(start: str, end: str, interval: str = "1h") -> pd.DataFrame:
-    """
-    Fetch OHLC data for gold (XAUUSD) using yfinance.
+# Legacy stubs for compatibility with existing imports
+def fetch_ohlc(*args, **kwargs):
+    return None
 
-    Returns a DataFrame indexed by datetime with columns:
-    ['open', 'high', 'low', 'close'].
-    """
-    return fetch_symbol_ohlc("XAUUSD", start, end, interval=interval)
+
+def fetch_symbol_ohlc(*args, **kwargs):
+    return None
+
+
+def fetch_xauusd_ohlc(*args, **kwargs):
+    return None

@@ -149,7 +149,8 @@ class Mt5BrokerAdapter(BrokerAdapter):
             raise RuntimeError(f"MT5 symbol {self.symbol} not found")
         self.digits = info.digits
         self.point = info.point
-        self.stop_level = info.stop_level
+        # some brokers may not expose stop_level; default to 0 if missing
+        self.stop_level = getattr(info, "stop_level", 0) or 0
         self.contract_size = info.trade_contract_size or info.contract_size
         self.log(
             f"Symbol {self.symbol}: digits={self.digits}, point={self.point}, "

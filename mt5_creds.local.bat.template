@@ -1,0 +1,11 @@
+@echo off
+rem Copy this file to mt5_creds.local.bat (same folder) and fill in your MT5 credentials.
+rem This file is NOT committed (see .gitignore).
+set OMEGAFX_MT5_LOGIN=YOUR_LOGIN
+set OMEGAFX_MT5_PASSWORD=YOUR_PASSWORD
+set OMEGAFX_MT5_SERVER=MetaQuotes-Demo
+
+rem Back-compat for scripts that read MT5_LOGIN/MT5_PASSWORD/MT5_SERVER
+set MT5_LOGIN=%OMEGAFX_MT5_LOGIN%
+set MT5_PASSWORD=%OMEGAFX_MT5_PASSWORD%
+set MT5_SERVER=%OMEGAFX_MT5_SERVER%

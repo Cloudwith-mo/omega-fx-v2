@@ -8,9 +8,17 @@ from .config import (
     SignalConfig,
     StrategyProfile,
     TrendContinuationSignalConfig,
+    LondonBreakoutSignalConfig,
+    LiquiditySweepSignalConfig,
 )
 from .data import fetch_symbol_ohlc
-from .signals import build_mean_reversion_signals, build_signals, build_trend_signals
+from .signals import (
+    build_london_breakout_signals,
+    build_liquidity_sweep_signals,
+    build_mean_reversion_signals,
+    build_signals,
+    build_trend_signals,
+)
 from .sim import run_randomized_signal_evaluations, run_signal_driven_evaluation
 
 
@@ -30,6 +38,18 @@ def _build_signals_for_profile(ohlc, profile: StrategyProfile):
         )
     if isinstance(sig_cfg, TrendContinuationSignalConfig):
         return build_trend_signals(
+            ohlc,
+            signal_config=sig_cfg,
+            session=profile.session,
+        )
+    if isinstance(sig_cfg, LondonBreakoutSignalConfig):
+        return build_london_breakout_signals(
+            ohlc,
+            signal_config=sig_cfg,
+            session=profile.session,
+        )
+    if isinstance(sig_cfg, LiquiditySweepSignalConfig):
+        return build_liquidity_sweep_signals(
             ohlc,
             signal_config=sig_cfg,
             session=profile.session,

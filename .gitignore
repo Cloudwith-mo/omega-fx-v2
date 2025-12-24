@@ -2,3 +2,10 @@ __pycache__/
 *.pyc
 .venv/
 logs/
+reports/
+data_csv/
+omegafx.log
+tmp_tail.txt
+*.egg-info/
+mt5_creds.local.bat
+*.local.bat

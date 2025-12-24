@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>USDJPY FastPass Dashboard</title>
+  <style>
+    :root {
+      --bg: #0b1221;
+      --card: #121a2d;
+      --card-2: #101727;
+      --text: #e9eef5;
+      --muted: #9fb0d1;
+      --accent: #2ecc71;
+      --warn: #f1c40f;
+      --error: #e74c3c;
+      --border: #1f2b44;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; margin: 16px; background: var(--bg); color: var(--text); }
+    .card { background: var(--card); padding: 16px; border-radius: 10px; margin-bottom: 14px; border: 1px solid var(--border); }
+    .card h3 { margin-top: 0; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .hidden { display:none; }
+    button { padding: 8px 14px; margin: 4px 8px 4px 0; border: none; border-radius: 6px; cursor: pointer; color: #0b1221; font-weight: 600; }
+    button.start { background: var(--accent); }
+    button.stop { background: var(--error); color: #fff; }
+    button.secondary { background: #23314d; color: var(--text); }
+    select { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--card-2); color: var(--text); }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .badge.ok { background: rgba(46, 204, 113, 0.15); color: var(--accent); }
+    .badge.warn { background: rgba(241, 196, 15, 0.15); color: var(--warn); }
+    .badge.err { background: rgba(231, 76, 60, 0.15); color: var(--error); }
+    .progress { width: 100%; height: 10px; background: #1b2438; border-radius: 6px; overflow: hidden; }
+    .progress-inner { height: 100%; width: 0%; background: var(--accent); transition: width 0.2s ease; }
+    pre { background: var(--card-2); padding: 12px; border-radius: 8px; overflow: auto; border: 1px solid var(--border); color: var(--text); }
+    .table { width: 100%; border-collapse: collapse; color: var(--text); font-size: 13px; }
+    .table th, .table td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+    .table th { color: var(--muted); font-weight: 600; }
+    .bar { height: 6px; background: #23314d; border-radius: 4px; overflow: hidden; }
+    .bar span { display: block; height: 100%; background: var(--accent); }
+    .tile-wrap { display: flex; gap: 10px; flex-wrap: wrap; }
+    .tile { flex: 1 1 180px; background: var(--card-2); border: 1px solid var(--border); padding: 10px; border-radius: 8px; }
+    .tile h4 { margin: 0 0 6px 0; font-size: 14px; }
+    .tile .metric { font-size: 24px; font-weight: 700; }
+    .section-title { margin: 6px 0; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; }
+    #events { font-size: 12px; color: var(--muted); max-height: 180px; overflow-y: auto; }
+    .event-item { margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <h1 style="margin-bottom:12px;">USDJPY FastPass Dashboard</h1>
+
+  <div class="row" style="margin-bottom:10px;">
+    <div class="badge ok" id="view-mode-label">Simple View</div>
+    <button class="secondary" id="simple-btn">Simple</button>
+    <button class="secondary" id="advanced-btn">Advanced</button>
+  </div>
+
+  <div class="card">
+    <div id="mode-banner" style="padding:8px; border-radius:8px; margin-bottom:8px; font-weight:700; display:none;"></div>
+    <div class="row">
+      <label>Game Mode:
+        <select id="mode-select">
+          <option value="shadow">Shadow</option>
+          <option value="demo">Demo</option>
+          <option value="ftmo">FTMO</option>
+        </select>
+      </label>
+      <label>Lineup Selector:
+        <select id="portfolio-select">
+          <option value="core">Curry Lineup (Core)</option>
+          <option value="v3">Curry Lineup (V3)</option>
+          <option value="multi">Splash Brothers Lineup (Multi)</option>
+        </select>
+      </label>
+      <button class="start" onclick="startBot()">Tip-Off</button>
+      <button class="stop" onclick="stopBot()">Timeout</button>
+      <span id="mode-badge" class="badge warn">Game Mode: ?</span>
+      <span id="portfolio-badge" class="badge warn">Lineup: ?</span>
+      <span id="runner-badge" class="badge warn">Runner: ?</span>
+      <span id="mt5-env-badge" class="badge warn">MT5 env: ?</span>
+      <span id="stop-reason" class="badge warn" style="display:none;"></span>
+      <span id="heartbeat" class="badge warn">Heartbeat: ?</span>
+      <button class="secondary" id="reset-btn">Hard Reset State</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <details><summary style="cursor:pointer;">Help / Playbook (click to expand)</summary>
+      <div style="font-size:13px; color:var(--muted); line-height:1.5;">
+        Shadow: Mode=Shadow, Portfolio=Core/V3/Multi as desired. OMEGAFX_LIVE_MODE=0, writes shadow log.<br>
+        Demo: Mode=Demo, Portfolio=V3 or Multi. Sends demo orders to MT5; writes demo log.<br>
+        FTMO sims: Use "Run FTMO" buttons to run pipelines; JSONs in reports/.<br>
+        Logs/Reports: Shadow log in logs/shadow_fastpass_usdjpy_core.csv (or selected), demo logs in logs/demo_usdjpy_v3_equity.csv or demo_multi_equity.csv, FTMO JSONs in reports/.
+      </div>
+    </details>
+  </div>
+
+  <div class="card">
+    <h3>Coach Summary</h3>
+    <div id="coach-summary">Loading...</div>
+    <div><strong>Lineup:</strong> <span id="ov-lineup">-</span></div>
+    <div><strong>Today PnL%:</strong> <span id="ov-pnl">-</span></div>
+    <div><strong>Today DD%:</strong> <span id="ov-dd">-</span></div>
+    <div><strong>Guardrail:</strong> <span id="ov-guard" class="badge">-</span></div>
+  </div>
+
+  <!-- SIMPLE VIEW -->
+  <div id="simple-view">
+    <div class="card">
+      <h3>Latest Trades</h3>
+      <div id="latest-trades-simple">Loading...</div>
+    </div>
+  </div>
+
+  <!-- ADVANCED VIEW -->
+  <div id="advanced-view" class="hidden">
+    <div class="card">
+      <h3>FTMO / Research Controls</h3>
+      <div class="row" style="margin-bottom:6px;">
+        <button class="secondary" onclick="runFtmo()">Run Curry Challenge</button>
+        <button class="secondary" onclick="runFtmoMulti()">Run Splash Brothers Challenge</button>
+        <button class="secondary" onclick="runFtmoExp()">Run Death Lineup Challenge</button>
+        <button class="secondary" onclick="runFtmoExpMulti()">Run Death Lineup Challenge (Multi)</button>
+        <button class="secondary" onclick="runFtmoExpV3()">Run Dynasty Lineup Challenge (Single)</button>
+        <button class="secondary" onclick="runFtmoExpV3Multi()">Run Dynasty Lineup Challenge (Multi)</button>
+        <button class="secondary" onclick="runExpOpt()">Run EXP Optimizer</button>
+        <button class="secondary" onclick="runExpOptKd()">Run KD Alpha Mode Tuning</button>
+        <button class="secondary" onclick="runExpOptV3()">Run Dynasty Optimizer (EXP_V3)</button>
+        <button class="secondary" onclick="applyExpV3Config()">Apply Dynasty Best Config</button>
+        <button class="secondary" onclick="applyExpConfig()">Set KD Minutes</button>
+        <button class="secondary" onclick="runResearch()">Run Research Report</button>
+        <button class="secondary" onclick="runGbpjpy()">Run GBPJPY Test</button>
+        <button class="secondary" onclick="downloadFtmo()">Download FTMO JSON</button>
+        <button class="secondary" onclick="downloadShadow()">Download Game Tape (Shadow)</button>
+        <button class="secondary" onclick="downloadDemo()">Download Game Tape (Demo)</button>
+        <button class="secondary" onclick="checkMarketData()">Check Market Data (Game Tapes)</button>
+        <button class="secondary" onclick="runExpV3Fastwindows()">Run Dynasty Fastwindows (EXP_V3)</button>
+        <button class="secondary" onclick="runDynastyAll()">Run All Dynasty Jobs</button>
+      </div>
+      <div style="margin-top:6px;">
+        <div style="font-size:12px; color:var(--muted);">Playoff Run Progress (Curry)</div>
+        <div class="progress"><div id="ftmo-progress-inner" class="progress-inner"></div></div>
+        <div id="ftmo-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
+        <div style="font-size:12px; color:var(--muted); margin-top:8px;">Playoff Run Progress (Splash Brothers)</div>
+        <div class="progress"><div id="ftmo-multi-progress-inner" class="progress-inner" style="background:#58a6ff;"></div></div>
+        <div id="ftmo-multi-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
+        <div style="font-size:12px; color:var(--muted); margin-top:8px;">Playoff Run Progress (Death Lineup)</div>
+        <div class="progress"><div id="ftmo-exp-progress-inner" class="progress-inner" style="background:#9b59b6;"></div></div>
+        <div id="ftmo-exp-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
+        <div style="font-size:12px; color:var(--muted); margin-top:8px;">Playoff Run Progress (Death Lineup Multi)</div>
+        <div class="progress"><div id="ftmo-exp-multi-progress-inner" class="progress-inner" style="background:#f39c12;"></div></div>
+        <div id="ftmo-exp-multi-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
+        <div style="font-size:12px; color:var(--muted); margin-top:8px;">Playoff Run Progress (Dynasty Lineup)</div>
+        <div class="progress"><div id="ftmo-exp-v3-progress-inner" class="progress-inner" style="background:#16a085;"></div></div>
+        <div id="ftmo-exp-v3-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
+        <div style="font-size:12px; color:var(--muted); margin-top:8px;">Playoff Run Progress (Dynasty Lineup Multi)</div>
+        <div class="progress"><div id="ftmo-exp-v3-multi-progress-inner" class="progress-inner" style="background:#8e44ad;"></div></div>
+        <div id="ftmo-exp-v3-multi-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
+        <div style="font-size:12px; color:var(--muted); margin-top:8px;">Dynasty Fastwindows (Sim)</div>
+        <div class="progress"><div id="exp-v3-fw-progress-inner" class="progress-inner" style="background:#d35400;"></div></div>
+        <div id="exp-v3-fw-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
+        <div style="font-size:12px; color:var(--muted); margin-top:8px;">Dynasty Optimizer</div>
+        <div class="progress"><div id="v3-opt-progress-inner" class="progress-inner" style="background:#2ecc71;"></div></div>
+        <div id="v3-opt-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
+        <div id="gbpjpy-status" style="margin-top:6px; font-size:12px; color:var(--muted);"></div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3>Team Stats</h3>
+        <div id="comparison">Loading...</div>
+      </div>
+      <div class="card">
+        <h3>Player Impact / Trades & PnL</h3>
+        <div id="edge-impact">Loading...</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Player Roster</h3>
+      <div id="roster">Loading...</div>
+    </div>
+
+    <div class="card">
+      <h3>KD Alpha Mode Tuning & Dynasty Lineup Tuning</h3>
+      <div id="exp-optimizer">Loading...</div>
+      <div style="margin-top:8px;">
+        <div style="font-size:12px; color:var(--muted);">KD Alpha Mode Tuning Progress</div>
+        <div class="progress"><div id="kd-opt-progress-inner" class="progress-inner" style="background:#9b59b6;"></div></div>
+        <div id="kd-opt-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
+        <div style="font-size:12px; color:var(--muted); margin-top:8px;">Dynasty Optimizer Progress</div>
+        <div class="progress"><div id="v3-opt-progress-inner" class="progress-inner" style="background:#2ecc71;"></div></div>
+        <div id="v3-opt-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Dynasty Best Config (R&D)</h3>
+      <div id="dynasty-best">Loading...</div>
+    </div>
+
+    <div class="card">
+      <h3>Latest Trades (Detailed)</h3>
+      <div id="latest-trades-adv">Loading...</div>
+    </div>
+
+    <div class="card">
+      <h3>AI Co-Pilot</h3>
+      <div id="ai-chat-log" style="min-height:120px; max-height:240px; overflow-y:auto; background:var(--card-2); padding:8px; border:1px solid var(--border); margin-bottom:8px;">No messages yet.</div>
+      <div class="row">
+        <input id="ai-input" type="text" placeholder="Ask the AI co-pilot..." style="flex:1; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--card-2); color:var(--text);" />
+        <button class="secondary" onclick="askAi()">Ask AI Co-Pilot</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Depth Chart</h3>
+      <div id="depth-chart">Loading...</div>
+    </div>
+
+    <div class="card">
+      <h3>Task Flight Deck</h3>
+      <div id="flight-deck">Loading...</div>
+    </div>
+
+    <div class="card">
+      <h3>Recent Outputs</h3>
+      <div id="recent-list">Loading...</div>
+    </div>
+
+    <div class="card">
+      <h3>Mission Log</h3>
+      <div id="events">Loading...</div>
+    </div>
+
+    <div class="card">
+      <h3>Task Logs (tails)</h3>
+      <div id="task-logs" style="font-size:12px; color:var(--muted); white-space:pre-wrap;">Loading...</div>
+    </div>
+  </div>
+
+  <script>
+    async function fetchJson(url, options={}) {
+      const res = await fetch(url, options);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    // Simple/Advanced toggle
+    const simpleBtn = document.getElementById('simple-btn');
+    const advancedBtn = document.getElementById('advanced-btn');
+    const simpleView = document.getElementById('simple-view');
+    const advancedView = document.getElementById('advanced-view');
+    const viewLabel = document.getElementById('view-mode-label');
+    const resetBtn = document.getElementById('reset-btn');
+    function showSimple() {
+      simpleView.classList.remove('hidden');
+      advancedView.classList.add('hidden');
+      viewLabel.textContent = 'Simple View';
+      viewLabel.className = 'badge ok';
+    }
+    function showAdvanced() {
+      simpleView.classList.add('hidden');
+      advancedView.classList.remove('hidden');
+      viewLabel.textContent = 'Advanced View';
+      viewLabel.className = 'badge warn';
+    }
+    simpleBtn.addEventListener('click', showSimple);
+    advancedBtn.addEventListener('click', showAdvanced);
+    if (resetBtn) {
+      resetBtn.addEventListener('click', ()=>{ fetch('/reset_state',{method:'POST'}).then(()=>loadStatus()); });
+    }
+    showSimple();
+
+    function setBadge(el, text, ok) {
+      el.textContent = text;
+      el.className = ok ? 'badge ok' : 'badge warn';
+    }
+
+    async function safePost(url, payload) {
+      const opts = {method:'POST'};
+      if (payload) opts.body = JSON.stringify(payload);
+      try { await fetchJson(url, opts); } catch (e) { console.error(e); }
+    }
+
+    async function runFtmo() { await safePost('/run_ftmo'); }
+    async function runFtmoMulti() { await safePost('/run_ftmo_multi'); }
+    async function runFtmoExp() { await safePost('/run_ftmo_exp'); }
+    async function runFtmoExpMulti() { await safePost('/run_ftmo_exp_multi'); }
+    async function runFtmoExpV3() { await safePost('/run_ftmo_exp_v3'); }
+    async function runFtmoExpV3Multi() { await safePost('/run_ftmo_exp_v3_multi'); }
+    async function runExpOpt() { await safePost('/run_exp_optimizer'); }
+    async function runExpOptKd() {
+      try {
+        const res = await fetch('/run_exp_v2_kd_primary_optimizer', {method:'POST'});
+        if (!res.ok) {
+          const msg = await res.json().catch(()=>({}));
+          alert(`KD optimizer failed to start: ${msg.error || res.status}`);
+        }
+      } catch(e){ console.error(e); alert('KD optimizer start failed'); }
+    }
+    async function runExpOptV3() {
+      try {
+        const res = await fetch('/run_exp_v3_optimizer', {method:'POST'});
+        if (!res.ok) {
+          const msg = await res.json().catch(()=>({}));
+          alert(`Dynasty optimizer failed to start: ${msg.error || res.status}`);
+        }
+      } catch(e){ console.error(e); alert('Dynasty optimizer start failed'); }
+    }
+    async function applyExpV3Config() { await safePost('/apply_exp_v3_config'); }
+    async function applyExpConfig() { await safePost('/apply_exp_v2_config'); }
+    async function runResearch() { await safePost('/run_research'); }
+    async function runGbpjpy() { await safePost('/run_gbpjpy_test'); }
+    function downloadFtmo() { window.location.href = '/download_ftmo_json'; }
+    function downloadShadow() { window.location.href = '/download_shadow_log'; }
+    function downloadDemo() { window.location.href = '/download_demo_log'; }
+    async function runExpV3Fastwindows() {
+      try {
+        const res = await fetch('/run_exp_v3_fastwindows', {method:'POST'});
+        if (!res.ok) {
+          const msg = await res.json().catch(()=>({}));
+          alert(`Dynasty fastwindows failed to start: ${msg.missing ? 'Missing history: '+ msg.missing.join(', ') : res.status}`);
+        }
+      } catch(e){ console.error(e); alert('Dynasty fastwindows start failed'); }
+    }
+    async function runDynastyAll() {
+      try { await runExpOptV3(); } catch(e){}
+      try { await runFtmoExpV3(); } catch(e){}
+      try { await runFtmoExpV3Multi(); } catch(e){}
+      try { await runExpV3Fastwindows(); } catch(e){}
+    }
+    async function checkMarketData() {
+      try {
+        const res = await fetch('/check_market_data');
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          alert('Market data OK for USDJPY/GBPJPY M5/M15/H1.');
+        } else {
+          const miss = (data.missing || []).join(', ');
+          alert(`Missing history: ${miss || 'Unknown'}. Open MT5 → Tools → History Center → Download M5/M15/H1 for USDJPY and M5/M15 for GBPJPY.`);
+        }
+      } catch (e) {
+        alert('Error checking market data.');
+      }
+    }
+
+    async function startBot() {
+      const portfolio = document.getElementById('portfolio-select').value;
+      const mode = document.getElementById('mode-select').value;
+      try {
+        await fetchJson('/start', {method:'POST', body: JSON.stringify({portfolio, mode})});
+      } catch(e){ console.error(e); }
+      refreshAll();
+    }
+    async function stopBot() {
+      try { await fetchJson('/stop', {method:'POST'}); } catch(e){ console.error(e); }
+      refreshAll();
+    }
+
+    function renderComparison(data) {
+      const rows = [];
+      const tags = {
+        'V3 (USDJPY)': 'Production – FTMO #1',
+        'Multi': 'Production – FTMO #2',
+        'GBPJPY Core': 'Production – GBP',
+        'EXP_V2 (USDJPY)': 'Experimental – Death',
+        'EXP_V2 Multi': 'Experimental – Death (Multi)',
+        'EXP_V3 (Dynasty)': 'Experimental – Dynasty',
+        'EXP_V3 Multi': 'Experimental – Dynasty (Multi)',
+      };
+      const addRow = (label, obj) => {
+        const symPass = obj && obj.symbol_pass_counts ? JSON.stringify(obj.symbol_pass_counts) : 'N/A';
+        const tag = tags[label] || '';
+        const badge = tag ? `<span class="badge ${tag.includes('Production')?'ok':'warn'}">${tag}</span>` : '';
+        rows.push(`
+          <tr>
+            <td>${label} ${badge}</td>
+            <td title="Pass Rate: % of FTMO full pipeline runs that passed P1+P2">${obj ? (obj.pass_rate_30d ?? obj.pass_rate ?? 'N/A') : 'N/A'}</td>
+            <td title="Avg Return live leg">${obj ? (obj.avg_return_30d ?? obj.avg_return ?? 'N/A') : 'N/A'}</td>
+            <td title="Worst Max Drawdown seen">${obj ? (obj.max_dd_30d ?? obj.max_dd ?? obj.avg_max_dd ?? 'N/A') : 'N/A'}</td>
+            <td title="Typical days to payout">${obj && obj.days_to_payout ? (obj.days_to_payout.median ?? 'N/A') : 'N/A'}</td>
+            <td>${symPass}</td>
+          </tr>
+        `);
+      };
+      addRow('V3 (USDJPY)', data.v3);
+      addRow('GBPJPY Core', data.gbpjpy_core);
+      addRow('Multi', data.multi_symbol);
+      addRow('EXP_V2 (USDJPY)', data.exp_v2);
+      addRow('EXP_V2 Multi', data.exp_v2_multi);
+      addRow('EXP_V3 (Dynasty)', data.exp_v3);
+      addRow('EXP_V3 Multi', data.exp_v3_multi);
+      return `<table class="table">
+        <tr><th>Lineup</th><th>Pass Rate</th><th>Avg Return</th><th>Worst DD</th><th>Median Days to Payout</th><th>Symbol Pass Counts</th></tr>
+        ${rows.join('')}
+      </table>`;
+    }
+
+    function renderRoster(roster) {
+      const rows = Object.entries(roster || {}).map(([name, info]) => {
+        return `<div class="tile">
+          <h4>${name}</h4>
+          <div style="font-size:12px; color:${'var(--muted)'};">${info.role || ''}</div>
+          <div class="tile-wrap">
+            <div><strong>Symbol:</strong> ${info.symbol || '-'}</div>
+            <div><strong>Regime:</strong> ${info.regime || '-'}</div>
+            <div><strong>Minutes:</strong> ${info.risk || '-'}</div>
+          </div>
+        </div>`;
+      });
+      return `<div class="tile-wrap">${rows.join('')}</div>`;
+    }
+
+    function renderEdgeImpact(impact) {
+      if (!impact) return 'No data';
+      const rows = Object.entries(impact).map(([edge, stats]) => {
+        return `<tr>
+          <td>${edge}</td>
+          <td>${stats.trades ?? 0}</td>
+          <td>${stats.pnl_pct ? stats.pnl_pct.toFixed(4) + '%' : '0%'}</td>
+          <td>${stats.avg_win ? stats.avg_win.toFixed(4)+'%' : '-'}</td>
+          <td>${stats.avg_loss ? stats.avg_loss.toFixed(4)+'%' : '-'}</td>
+        </tr>`;
+      });
+      return `<table class="table">
+        <tr><th>Player</th><th>Trades</th><th>PnL%</th><th>Avg Win%</th><th>Avg Loss%</th></tr>
+        ${rows.join('')}
+      </table>`;
+    }
+
+    function renderLatestTrades(trades) {
+      if (!trades || !trades.length) return 'No trades yet.';
+      const sorted = [...trades].sort((a,b) => (b.timestamp||'').localeCompare(a.timestamp||''));
+      const rows = sorted.map(t => `
+        <tr>
+          <td>${t.timestamp || ''}</td>
+          <td>${t.symbol || ''}</td>
+          <td>${t.strategy_name_friendly || t.strategy_id || ''}</td>
+          <td>${(t.side || '').toUpperCase()}</td>
+          <td>${t.pnl_pct != null ? t.pnl_pct.toFixed(4) + '%' : '0%'}</td>
+          <td>${t.equity_after_trade != null ? t.equity_after_trade.toFixed(2) : ''}</td>
+        </tr>
+      `);
+      return `<div style="max-height:320px; overflow-y:auto;">
+        <table class="table">
+          <tr><th>Time</th><th>Symbol</th><th>Player</th><th>Side</th><th>PnL%</th><th>Equity After</th></tr>
+          ${rows.join('')}
+        </table>
+      </div>`;
+    }
+
+    function renderCoachSummary(status, metrics) {
+      const hbFresh = metrics && metrics.last_heartbeat_time;
+      const hbText = hbFresh ? `Heartbeat OK – last: ${metrics.last_heartbeat_time}` : 'Heartbeat stale or missing';
+      const hbClass = hbFresh ? 'badge ok' : 'badge warn';
+      const runnerText = status.running ? 'RUNNING' : 'STOPPED';
+      const runnerClass = status.running ? 'badge ok' : 'badge err';
+      const stopReason = status.last_stop_reason ? `<div style="color:var(--warn); font-size:12px;">Stop reason: ${status.last_stop_reason}</div>` : '';
+      const symList = (metrics && metrics.symbols_today && metrics.symbols_today.length) ? metrics.symbols_today.join(', ') : '-';
+      return `
+        <div class="tile-wrap">
+          <div class="tile"><h4>Mode</h4><div class="metric">${status.mode || '-'}</div></div>
+          <div class="tile"><h4>Lineup</h4><div class="metric">${status.portfolio || '-'}</div></div>
+          <div class="tile"><h4>Runner</h4><span class="${runnerClass}">${runnerText}</span><br/><span class="${hbClass}">${hbText}</span></div>
+          <div class="tile"><h4>Trades Today</h4><div class="metric">${metrics.trades_today ?? 0}</div><div style="font-size:12px;">Wins: ${metrics.wins_today ?? 0} | Losses: ${metrics.losses_today ?? 0}</div></div>
+          <div class="tile"><h4>PnL Today</h4><div class="metric">${metrics.pnl_today_pct != null ? metrics.pnl_today_pct.toFixed(4)+'%' : '0%'}</div><div style="font-size:12px;">Max DD: ${metrics.max_dd_today_pct != null ? metrics.max_dd_today_pct.toFixed(4)+'%' : '-'}</div></div>
+          <div class="tile"><h4>Symbols</h4><div class="metric">${symList}</div><div style="font-size:12px;">Last trade: ${metrics.last_trade_time || '-'}</div></div>
+          <div class="tile"><h4>Equity</h4><div class="metric">Start: ${metrics.start_equity_today ?? '-'} | Now: ${metrics.end_equity_today ?? '-'}</div></div>
+        </div>
+        ${stopReason}
+      `;
+    }
+
+    function fillProgress(idInner, idText, pct, eta) {
+      const inner = document.getElementById(idInner);
+      const txt = document.getElementById(idText);
+      if (inner) inner.style.width = `${Math.max(0, Math.min(100, pct||0))}%`;
+      if (txt) txt.textContent = `Progress: ${pct != null ? pct.toFixed(1) : '0'}% ${eta ? 'ETA '+eta : ''}`;
+    }
+
+    async function refreshAll() {
+      let status = {};
+      let live = {};
+      let recent = [];
+      try {
+        status = await fetchJson('/status');
+      } catch (e) { console.error(e); }
+      try {
+        live = await fetchJson('/live_metrics');
+      } catch (e) { console.error(e); }
+      try {
+        const rt = await fetchJson('/recent_trades');
+        recent = Array.isArray(rt) ? rt : (rt.trades || []);
+      } catch (e) { console.error(e); }
+      const coach = document.getElementById('coach-summary');
+      if (coach) coach.innerHTML = renderCoachSummary(status, live);
+      document.getElementById('ov-lineup').textContent = status.portfolio || '-';
+      document.getElementById('ov-pnl').textContent = live.pnl_today_pct != null ? live.pnl_today_pct.toFixed(4)+'%' : '-';
+      document.getElementById('ov-dd').textContent = live.max_dd_today_pct != null ? live.max_dd_today_pct.toFixed(4)+'%' : '-';
+      document.getElementById('ov-guard').textContent = live.guardrail_hits != null ? live.guardrail_hits : '-';
+      setBadge(document.getElementById('mode-badge'), `Game Mode: ${status.mode || '?'}`, !!status.mode);
+      setBadge(document.getElementById('portfolio-badge'), `Lineup: ${status.portfolio || '?'}`, !!status.portfolio);
+      setBadge(document.getElementById('runner-badge'), `Runner: ${status.running ? 'RUNNING' : 'STOPPED'}`, status.running);
+      const mt5Env = status.mt5_env_present || {};
+      const mt5Ok = mt5Env.login && mt5Env.password && mt5Env.server;
+      setBadge(document.getElementById('mt5-env-badge'), `MT5 env: ${mt5Ok ? 'present' : 'missing'}`, mt5Ok);
+      const hb = document.getElementById('heartbeat');
+      if (hb) setBadge(hb, live.last_heartbeat_time ? `Heartbeat OK ${live.last_heartbeat_time}` : 'Heartbeat missing', !!live.last_heartbeat_time);
+      const stop = document.getElementById('stop-reason');
+      if (stop) {
+        if (status.last_stop_reason) {
+          stop.style.display = 'inline-block';
+          stop.textContent = status.last_stop_reason;
+        } else stop.style.display = 'none';
+      }
+      document.getElementById('latest-trades-simple').innerHTML = renderLatestTrades(recent.slice(0, 20));
+      document.getElementById('latest-trades-adv').innerHTML = renderLatestTrades(recent);
+      // advanced sections
+      try {
+        const cmp = await fetchJson('/comparison');
+        document.getElementById('comparison').innerHTML = renderComparison(cmp);
+      } catch (e) { document.getElementById('comparison').textContent = 'Error loading team stats'; }
+      try {
+        const roster = await fetchJson('/config_snapshot');
+        document.getElementById('roster').innerHTML = renderRoster(roster.roster || roster);
+      } catch (e) { document.getElementById('roster').textContent = 'Error loading roster'; }
+      try {
+        const edge = await fetchJson('/edge_impact');
+        document.getElementById('edge-impact').innerHTML = renderEdgeImpact(edge);
+      } catch (e) { document.getElementById('edge-impact').textContent = 'Error loading edge impact'; }
+      try {
+        const opt = await fetchJson('/optimizer_results');
+        document.getElementById('exp-optimizer').textContent = JSON.stringify(opt, null, 2);
+        fillProgress('kd-opt-progress-inner', 'kd-opt-progress-text', opt.kd_primary?.progress_pct || 0, opt.kd_primary?.eta);
+        fillProgress('v3-opt-progress-inner', 'v3-opt-progress-text', opt.exp_v3?.progress_pct || 0, opt.exp_v3?.eta);
+      } catch (e) { document.getElementById('exp-optimizer').textContent = 'Error loading optimizer'; }
+      try {
+        const dyn = await fetchJson('/exp_v3_selected');
+        document.getElementById('dynasty-best').textContent = JSON.stringify(dyn, null, 2);
+      } catch (e) { document.getElementById('dynasty-best').textContent = 'Error loading dynasty best'; }
+      try {
+        const dc = await fetchJson('/depth_chart');
+        document.getElementById('depth-chart').innerHTML = JSON.stringify(dc, null, 2);
+      } catch (e) { document.getElementById('depth-chart').textContent = 'Error loading depth chart'; }
+      try {
+        const fd = await fetchJson('/tasks');
+        document.getElementById('flight-deck').innerHTML = fd.map(x=>`<div>${x}</div>`).join('');
+      } catch (e) { document.getElementById('flight-deck').textContent = 'Error loading tasks'; }
+      try {
+        const rl = await fetchJson('/recent_reports');
+        document.getElementById('recent-list').innerHTML = rl.map(x=>`<div>${x}</div>`).join('');
+      } catch (e) { document.getElementById('recent-list').textContent = 'Error loading outputs'; }
+      try {
+        const ev = await fetchJson('/events_stream_snapshot');
+        document.getElementById('events').innerHTML = ev.map(x=>`<div class="event-item">${x}</div>`).join('');
+      } catch (e) { document.getElementById('events').textContent = 'Error loading events'; }
+      try {
+        const tl = await fetchJson('/task_logs_tail');
+        document.getElementById('task-logs').textContent = tl.join('\\n');
+      } catch (e) { document.getElementById('task-logs').textContent = 'Error loading task logs'; }
+    }
+
+    refreshAll();
+    setInterval(refreshAll, 7000);
+
+    async function askAi() {
+      const input = document.getElementById('ai-input');
+      const log = document.getElementById('ai-chat-log');
+      const question = (input.value || '').trim();
+      if (!question) return;
+      input.value = '';
+      log.innerHTML += `<div><strong>You:</strong> ${question}</div>`;
+      try {
+        const ctx = await fetchJson('/ai_context');
+        const res = await fetchJson('/ai_query', {method:'POST', body: JSON.stringify({user_message: question, ai_context: ctx})});
+        log.innerHTML += `<div><strong>AI:</strong> ${res.answer || res.result || 'No response'}</div>`;
+      } catch (e) {
+        log.innerHTML += `<div style="color:var(--error);"><strong>AI error:</strong> ${e.message}</div>`;
+      }
+      log.scrollTop = log.scrollHeight;
+    }
+  </script>
+</body>
+</html>

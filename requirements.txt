@@ -1,0 +1,6 @@
+numpy>=1.24
+pandas>=2.0
+yfinance>=0.2
+MetaTrader5>=5.0
+Flask>=2.3
+openai>=1.12.0
