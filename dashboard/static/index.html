@@ -5,390 +5,456 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>USDJPY FastPass Dashboard</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Space+Grotesk:wght@400;600;700&display=swap');
     :root {
-      --bg: #0b1221;
-      --card: #121a2d;
-      --card-2: #101727;
-      --text: #e9eef5;
-      --muted: #9fb0d1;
-      --accent: #2ecc71;
-      --warn: #f1c40f;
-      --error: #e74c3c;
-      --border: #1f2b44;
+      --bg: #0a0f1c;
+      --panel: #0f172a;
+      --panel-2: #111c33;
+      --ink: #e7eefc;
+      --muted: #9aa8c7;
+      --accent: #27d07d;
+      --warn: #f2c94c;
+      --error: #ff5c5c;
+      --line: #1e2a44;
+      --glow: #2b6cb0;
     }
     * { box-sizing: border-box; }
-    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; margin: 16px; background: var(--bg); color: var(--text); }
-    .card { background: var(--card); padding: 16px; border-radius: 10px; margin-bottom: 14px; border: 1px solid var(--border); }
-    .card h3 { margin-top: 0; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
-    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    .hidden { display:none; }
-    button { padding: 8px 14px; margin: 4px 8px 4px 0; border: none; border-radius: 6px; cursor: pointer; color: #0b1221; font-weight: 600; }
-    button.start { background: var(--accent); }
-    button.stop { background: var(--error); color: #fff; }
-    button.secondary { background: #23314d; color: var(--text); }
-    select { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--card-2); color: var(--text); }
-    .badge { display: inline-block; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
-    .badge.ok { background: rgba(46, 204, 113, 0.15); color: var(--accent); }
-    .badge.warn { background: rgba(241, 196, 15, 0.15); color: var(--warn); }
-    .badge.err { background: rgba(231, 76, 60, 0.15); color: var(--error); }
-    .progress { width: 100%; height: 10px; background: #1b2438; border-radius: 6px; overflow: hidden; }
-    .progress-inner { height: 100%; width: 0%; background: var(--accent); transition: width 0.2s ease; }
-    pre { background: var(--card-2); padding: 12px; border-radius: 8px; overflow: auto; border: 1px solid var(--border); color: var(--text); }
-    .table { width: 100%; border-collapse: collapse; color: var(--text); font-size: 13px; }
-    .table th, .table td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); }
-    .table th { color: var(--muted); font-weight: 600; }
-    .bar { height: 6px; background: #23314d; border-radius: 4px; overflow: hidden; }
-    .bar span { display: block; height: 100%; background: var(--accent); }
-    .tile-wrap { display: flex; gap: 10px; flex-wrap: wrap; }
-    .tile { flex: 1 1 180px; background: var(--card-2); border: 1px solid var(--border); padding: 10px; border-radius: 8px; }
-    .tile h4 { margin: 0 0 6px 0; font-size: 14px; }
-    .tile .metric { font-size: 24px; font-weight: 700; }
-    .section-title { margin: 6px 0; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; }
-    #events { font-size: 12px; color: var(--muted); max-height: 180px; overflow-y: auto; }
-    .event-item { margin-bottom: 4px; }
+    body {
+      margin: 0;
+      font-family: "Space Grotesk", system-ui, sans-serif;
+      background: radial-gradient(1200px 600px at 70% -10%, #152750 0%, #0a0f1c 50%, #090d19 100%);
+      color: var(--ink);
+    }
+    .wrap { padding: 18px 22px 30px; }
+    .topbar {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 18px;
+      background: linear-gradient(90deg, #0f1b33 0%, #132545 60%, #0f1b33 100%);
+      border: 1px solid #1f2b44;
+      border-radius: 14px;
+      box-shadow: 0 0 24px rgba(22, 74, 138, 0.25);
+      margin-bottom: 14px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-family: "Chakra Petch", sans-serif;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .brand .logo {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      background: conic-gradient(from 180deg, #2ecc71, #2b6cb0, #2ecc71);
+      box-shadow: 0 0 18px rgba(39, 208, 125, 0.25);
+    }
+    .top-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(160px, 1fr));
+      gap: 12px;
+    }
+    .metric-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px 12px;
+    }
+    .metric-card span {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+    .metric-card strong {
+      display: block;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid #22314f;
+      background: #0f1b33;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #888;
+      box-shadow: 0 0 8px rgba(255,255,255,0.2);
+    }
+    .control-bar {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+    select {
+      padding: 6px 10px;
+      background: #0e162b;
+      color: var(--ink);
+      border: 1px solid #22314f;
+      border-radius: 8px;
+    }
+    button {
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-start { background: var(--accent); color: #04130b; }
+    .btn-stop { background: var(--error); color: #fff; }
+    .btn-ghost { background: #1b2a44; color: var(--ink); }
+    .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+    .badge {
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid #23314f;
+      background: #101a2f;
+    }
+    .badge.ok { color: var(--accent); }
+    .badge.warn { color: var(--warn); }
+    .badge.err { color: var(--error); }
+    .grid {
+      display: grid;
+      grid-template-columns: 280px minmax(520px, 1fr) 360px;
+      gap: 14px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .card h3 {
+      margin: 0 0 10px 0;
+      font-size: 14px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .gauge-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .gauge {
+      position: relative;
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: conic-gradient(var(--accent) 0deg, #243352 0deg);
+      margin: auto;
+    }
+    .gauge-inner {
+      position: absolute;
+      inset: 10px;
+      background: #0c1428;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .gauge-value { font-size: 18px; color: var(--ink); font-weight: 700; }
+    .lineup-list { display: grid; gap: 8px; }
+    .lineup-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 8px;
+      border: 1px solid #22314f;
+      border-radius: 8px;
+      background: #0d172c;
+      font-size: 12px;
+    }
+    .lineup-status {
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #14304f;
+      color: var(--accent);
+      font-size: 11px;
+    }
+    .chart {
+      height: 320px;
+      background: #0b1326;
+      border: 1px solid #1a2740;
+      border-radius: 10px;
+      padding: 8px;
+    }
+    canvas { width: 100%; height: 100%; }
+    .playbyplay {
+      max-height: 320px;
+      overflow-y: auto;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .latest-trades {
+      max-height: 320px;
+      overflow-y: auto;
+    }
+    .play-item { padding: 6px 0; border-bottom: 1px solid #1b2a44; }
+    .ai-panel textarea {
+      width: 100%;
+      background: #0b1326;
+      border: 1px solid #1b2a44;
+      border-radius: 8px;
+      color: var(--ink);
+      padding: 8px;
+      min-height: 60px;
+    }
+    .table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .table th, .table td { padding: 6px 8px; border-bottom: 1px solid #1b2a44; }
+    .hidden { display: none; }
   </style>
 </head>
 <body>
-  <h1 style="margin-bottom:12px;">USDJPY FastPass Dashboard</h1>
-
-  <div class="row" style="margin-bottom:10px;">
-    <div class="badge ok" id="view-mode-label">Simple View</div>
-    <button class="secondary" id="simple-btn">Simple</button>
-    <button class="secondary" id="advanced-btn">Advanced</button>
-  </div>
-
-  <div class="card">
-    <div id="mode-banner" style="padding:8px; border-radius:8px; margin-bottom:8px; font-weight:700; display:none;"></div>
-    <div class="row">
-      <label>Game Mode:
-        <select id="mode-select">
-          <option value="shadow">Shadow</option>
-          <option value="demo">Demo</option>
-          <option value="ftmo">FTMO</option>
-        </select>
-      </label>
-      <label>Lineup Selector:
-        <select id="portfolio-select">
-          <option value="core">Curry Lineup (Core)</option>
-          <option value="v3">Curry Lineup (V3)</option>
-          <option value="multi">Splash Brothers Lineup (Multi)</option>
-        </select>
-      </label>
-      <button class="start" onclick="startBot()">Tip-Off</button>
-      <button class="stop" onclick="stopBot()">Timeout</button>
-      <span id="mode-badge" class="badge warn">Game Mode: ?</span>
-      <span id="portfolio-badge" class="badge warn">Lineup: ?</span>
-      <span id="runner-badge" class="badge warn">Runner: ?</span>
-      <span id="mt5-env-badge" class="badge warn">MT5 env: ?</span>
-      <span id="stop-reason" class="badge warn" style="display:none;"></span>
-      <span id="heartbeat" class="badge warn">Heartbeat: ?</span>
-      <button class="secondary" id="reset-btn">Hard Reset State</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <details><summary style="cursor:pointer;">Help / Playbook (click to expand)</summary>
-      <div style="font-size:13px; color:var(--muted); line-height:1.5;">
-        Shadow: Mode=Shadow, Portfolio=Core/V3/Multi as desired. OMEGAFX_LIVE_MODE=0, writes shadow log.<br>
-        Demo: Mode=Demo, Portfolio=V3 or Multi. Sends demo orders to MT5; writes demo log.<br>
-        FTMO sims: Use "Run FTMO" buttons to run pipelines; JSONs in reports/.<br>
-        Logs/Reports: Shadow log in logs/shadow_fastpass_usdjpy_core.csv (or selected), demo logs in logs/demo_usdjpy_v3_equity.csv or demo_multi_equity.csv, FTMO JSONs in reports/.
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>Omega-FX</div>
       </div>
-    </details>
-  </div>
-
-  <div class="card">
-    <h3>Coach Summary</h3>
-    <div id="coach-summary">Loading...</div>
-    <div><strong>Lineup:</strong> <span id="ov-lineup">-</span></div>
-    <div><strong>Today PnL%:</strong> <span id="ov-pnl">-</span></div>
-    <div><strong>Today DD%:</strong> <span id="ov-dd">-</span></div>
-    <div><strong>Guardrail:</strong> <span id="ov-guard" class="badge">-</span></div>
-  </div>
-
-  <!-- SIMPLE VIEW -->
-  <div id="simple-view">
-    <div class="card">
-      <h3>Latest Trades</h3>
-      <div id="latest-trades-simple">Loading...</div>
-    </div>
-  </div>
-
-  <!-- ADVANCED VIEW -->
-  <div id="advanced-view" class="hidden">
-    <div class="card">
-      <h3>FTMO / Research Controls</h3>
-      <div class="row" style="margin-bottom:6px;">
-        <button class="secondary" onclick="runFtmo()">Run Curry Challenge</button>
-        <button class="secondary" onclick="runFtmoMulti()">Run Splash Brothers Challenge</button>
-        <button class="secondary" onclick="runFtmoExp()">Run Death Lineup Challenge</button>
-        <button class="secondary" onclick="runFtmoExpMulti()">Run Death Lineup Challenge (Multi)</button>
-        <button class="secondary" onclick="runFtmoExpV3()">Run Dynasty Lineup Challenge (Single)</button>
-        <button class="secondary" onclick="runFtmoExpV3Multi()">Run Dynasty Lineup Challenge (Multi)</button>
-        <button class="secondary" onclick="runExpOpt()">Run EXP Optimizer</button>
-        <button class="secondary" onclick="runExpOptKd()">Run KD Alpha Mode Tuning</button>
-        <button class="secondary" onclick="runExpOptV3()">Run Dynasty Optimizer (EXP_V3)</button>
-        <button class="secondary" onclick="applyExpV3Config()">Apply Dynasty Best Config</button>
-        <button class="secondary" onclick="applyExpConfig()">Set KD Minutes</button>
-        <button class="secondary" onclick="runResearch()">Run Research Report</button>
-        <button class="secondary" onclick="runGbpjpy()">Run GBPJPY Test</button>
-        <button class="secondary" onclick="downloadFtmo()">Download FTMO JSON</button>
-        <button class="secondary" onclick="downloadShadow()">Download Game Tape (Shadow)</button>
-        <button class="secondary" onclick="downloadDemo()">Download Game Tape (Demo)</button>
-        <button class="secondary" onclick="checkMarketData()">Check Market Data (Game Tapes)</button>
-        <button class="secondary" onclick="runExpV3Fastwindows()">Run Dynasty Fastwindows (EXP_V3)</button>
-        <button class="secondary" onclick="runDynastyAll()">Run All Dynasty Jobs</button>
+      <div class="top-metrics">
+        <div class="metric-card">
+          <span>Account Balance</span>
+          <strong id="account-balance">-</strong>
+        </div>
+        <div class="metric-card">
+          <span>Equity</span>
+          <strong id="account-equity">-</strong>
+        </div>
+        <div class="metric-card">
+          <span>System Status</span>
+          <div class="status-pill">
+            <span class="status-dot" id="system-dot"></span>
+            <span id="system-status">OFFLINE</span>
+          </div>
+        </div>
       </div>
-      <div style="margin-top:6px;">
-        <div style="font-size:12px; color:var(--muted);">Playoff Run Progress (Curry)</div>
-        <div class="progress"><div id="ftmo-progress-inner" class="progress-inner"></div></div>
-        <div id="ftmo-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
-        <div style="font-size:12px; color:var(--muted); margin-top:8px;">Playoff Run Progress (Splash Brothers)</div>
-        <div class="progress"><div id="ftmo-multi-progress-inner" class="progress-inner" style="background:#58a6ff;"></div></div>
-        <div id="ftmo-multi-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
-        <div style="font-size:12px; color:var(--muted); margin-top:8px;">Playoff Run Progress (Death Lineup)</div>
-        <div class="progress"><div id="ftmo-exp-progress-inner" class="progress-inner" style="background:#9b59b6;"></div></div>
-        <div id="ftmo-exp-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
-        <div style="font-size:12px; color:var(--muted); margin-top:8px;">Playoff Run Progress (Death Lineup Multi)</div>
-        <div class="progress"><div id="ftmo-exp-multi-progress-inner" class="progress-inner" style="background:#f39c12;"></div></div>
-        <div id="ftmo-exp-multi-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
-        <div style="font-size:12px; color:var(--muted); margin-top:8px;">Playoff Run Progress (Dynasty Lineup)</div>
-        <div class="progress"><div id="ftmo-exp-v3-progress-inner" class="progress-inner" style="background:#16a085;"></div></div>
-        <div id="ftmo-exp-v3-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
-        <div style="font-size:12px; color:var(--muted); margin-top:8px;">Playoff Run Progress (Dynasty Lineup Multi)</div>
-        <div class="progress"><div id="ftmo-exp-v3-multi-progress-inner" class="progress-inner" style="background:#8e44ad;"></div></div>
-        <div id="ftmo-exp-v3-multi-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
-        <div style="font-size:12px; color:var(--muted); margin-top:8px;">Dynasty Fastwindows (Sim)</div>
-        <div class="progress"><div id="exp-v3-fw-progress-inner" class="progress-inner" style="background:#d35400;"></div></div>
-        <div id="exp-v3-fw-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
-        <div style="font-size:12px; color:var(--muted); margin-top:8px;">Dynasty Optimizer</div>
-        <div class="progress"><div id="v3-opt-progress-inner" class="progress-inner" style="background:#2ecc71;"></div></div>
-        <div id="v3-opt-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
-        <div id="gbpjpy-status" style="margin-top:6px; font-size:12px; color:var(--muted);"></div>
+      <div class="badges">
+        <span id="mode-badge" class="badge warn">Game Mode: ?</span>
+        <span id="portfolio-badge" class="badge warn">Lineup: ?</span>
+        <span id="runner-badge" class="badge warn">Runner: ?</span>
+        <span id="mt5-env-badge" class="badge warn">MT5 env: ?</span>
+        <span id="heartbeat" class="badge warn">Heartbeat: ?</span>
+      </div>
+    </div>
+
+    <div class="control-bar">
+      <div class="controls">
+        <label>Game Mode:
+          <select id="mode-select">
+            <option value="shadow">Shadow</option>
+            <option value="demo">Demo</option>
+            <option value="ftmo">FTMO</option>
+          </select>
+        </label>
+        <label>Lineup Selector:
+          <select id="portfolio-select">
+            <option value="core">Curry Lineup (Core)</option>
+            <option value="v3">Curry Lineup (V3)</option>
+            <option value="multi">Splash Brothers Lineup (Multi)</option>
+          </select>
+        </label>
+        <button class="btn-start" onclick="startBot()">Enable Bot</button>
+        <button class="btn-stop" onclick="stopBot()">Disable Bot</button>
+        <button class="btn-ghost" id="reset-btn">Hard Reset State</button>
+        <span id="stop-reason" class="badge warn" style="display:none;"></span>
       </div>
     </div>
 
     <div class="grid">
+      <div>
+        <div class="card">
+          <h3>Risk Management (Draymond)</h3>
+          <div class="gauge-wrap">
+            <div>
+              <div id="dd-gauge" class="gauge">
+                <div class="gauge-inner">
+                  <div>Max DD</div>
+                  <div class="gauge-value" id="dd-value">-</div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div id="pnl-gauge" class="gauge">
+                <div class="gauge-inner">
+                  <div>PnL Today</div>
+                  <div class="gauge-value" id="pnl-value">-</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Coach Summary</h3>
+          <div id="coach-summary">Loading...</div>
+        </div>
+        <div class="card">
+          <h3>Active Lineup</h3>
+          <div id="roster">Loading...</div>
+        </div>
+        <div class="card">
+          <h3>Manual Override</h3>
+          <button class="btn-stop" onclick="stopBot()">Emergency Stop</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <h3>Live Data</h3>
+          <div class="chart">
+            <canvas id="equity-chart"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Team Stats</h3>
+          <div id="comparison">Loading...</div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <h3>Play-by-Play</h3>
+          <div id="latest-trades-simple">Loading...</div>
+        </div>
+        <div class="card ai-panel">
+          <h3>AI Coach & Co-Pilot Assist</h3>
+          <div id="ai-chat-log" style="max-height:220px; overflow-y:auto; font-size:12px; color:var(--muted); border:1px solid #1b2a44; padding:8px; border-radius:8px; margin-bottom:8px;">
+            No messages yet.
+          </div>
+          <textarea id="ai-input" placeholder="Ask the AI Co-Pilot..."></textarea>
+          <div style="margin-top:8px;">
+            <button class="btn-ghost" onclick="askAi()">Ask AI Co-Pilot</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <details>
+        <summary style="cursor:pointer;">Help / Playbook (click to expand)</summary>
+        <div style="font-size:13px; color:var(--muted); line-height:1.5; margin-top:8px;">
+          Shadow: Mode=Shadow, Portfolio=Core/V3/Multi. OMEGAFX_LIVE_MODE=0, writes shadow log.<br>
+          Demo: Mode=Demo, Portfolio=V3 or Multi. Sends demo orders to MT5; writes demo log.<br>
+          FTMO sims: Use "Run FTMO" buttons to run pipelines; JSONs in reports/.<br>
+          Logs/Reports: Shadow log in logs/shadow_fastpass_usdjpy_core.csv (or selected), demo logs in logs/demo_usdjpy_v3_equity.csv or demo_multi_equity.csv, FTMO JSONs in reports/.
+        </div>
+      </details>
+    </div>
+
+    <div id="advanced-view" class="hidden">
       <div class="card">
-        <h3>Team Stats</h3>
-        <div id="comparison">Loading...</div>
+        <h3>Latest Trades (Detailed)</h3>
+        <div id="latest-trades-adv">Loading...</div>
       </div>
       <div class="card">
         <h3>Player Impact / Trades & PnL</h3>
         <div id="edge-impact">Loading...</div>
       </div>
-    </div>
-
-    <div class="card">
-      <h3>Player Roster</h3>
-      <div id="roster">Loading...</div>
-    </div>
-
-    <div class="card">
-      <h3>KD Alpha Mode Tuning & Dynasty Lineup Tuning</h3>
-      <div id="exp-optimizer">Loading...</div>
-      <div style="margin-top:8px;">
-        <div style="font-size:12px; color:var(--muted);">KD Alpha Mode Tuning Progress</div>
-        <div class="progress"><div id="kd-opt-progress-inner" class="progress-inner" style="background:#9b59b6;"></div></div>
-        <div id="kd-opt-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
-        <div style="font-size:12px; color:var(--muted); margin-top:8px;">Dynasty Optimizer Progress</div>
-        <div class="progress"><div id="v3-opt-progress-inner" class="progress-inner" style="background:#2ecc71;"></div></div>
-        <div id="v3-opt-progress-text" style="font-size:12px; color:var(--muted); margin-top:2px;"></div>
+      <div class="card">
+        <h3>Task Flight Deck</h3>
+        <div id="flight-deck">Loading...</div>
       </div>
-    </div>
-
-    <div class="card">
-      <h3>Dynasty Best Config (R&D)</h3>
-      <div id="dynasty-best">Loading...</div>
-    </div>
-
-    <div class="card">
-      <h3>Latest Trades (Detailed)</h3>
-      <div id="latest-trades-adv">Loading...</div>
-    </div>
-
-    <div class="card">
-      <h3>AI Co-Pilot</h3>
-      <div id="ai-chat-log" style="min-height:120px; max-height:240px; overflow-y:auto; background:var(--card-2); padding:8px; border:1px solid var(--border); margin-bottom:8px;">No messages yet.</div>
-      <div class="row">
-        <input id="ai-input" type="text" placeholder="Ask the AI co-pilot..." style="flex:1; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--card-2); color:var(--text);" />
-        <button class="secondary" onclick="askAi()">Ask AI Co-Pilot</button>
+      <div class="card">
+        <h3>Recent Outputs</h3>
+        <div id="recent-list">Loading...</div>
       </div>
-    </div>
-
-    <div class="card">
-      <h3>Depth Chart</h3>
-      <div id="depth-chart">Loading...</div>
-    </div>
-
-    <div class="card">
-      <h3>Task Flight Deck</h3>
-      <div id="flight-deck">Loading...</div>
-    </div>
-
-    <div class="card">
-      <h3>Recent Outputs</h3>
-      <div id="recent-list">Loading...</div>
-    </div>
-
-    <div class="card">
-      <h3>Mission Log</h3>
-      <div id="events">Loading...</div>
-    </div>
-
-    <div class="card">
-      <h3>Task Logs (tails)</h3>
-      <div id="task-logs" style="font-size:12px; color:var(--muted); white-space:pre-wrap;">Loading...</div>
     </div>
   </div>
 
   <script>
-    async function fetchJson(url, options={}) {
-      const res = await fetch(url, options);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const simpleBtn = document.getElementById('simple-btn');
+    const advancedBtn = document.getElementById('advanced-btn');
+    const advView = document.getElementById('advanced-view');
+    const viewLabel = document.getElementById('view-mode-label');
+    const resetBtn = document.getElementById('reset-btn');
+    let lastTrades = [];
+
+    if (simpleBtn && advancedBtn) {
+      simpleBtn.onclick = () => {
+        advView.classList.add('hidden');
+        if (viewLabel) viewLabel.textContent = 'Simple View';
+      };
+      advancedBtn.onclick = () => {
+        advView.classList.remove('hidden');
+        if (viewLabel) viewLabel.textContent = 'Advanced View';
+      };
+    }
+
+    if (resetBtn) {
+      resetBtn.onclick = async () => {
+        await fetch('/reset_state', {method:'POST'});
+      };
+    }
+
+    function setBadge(el, text, ok) {
+      if (!el) return;
+      el.textContent = text;
+      el.className = 'badge ' + (ok ? 'ok' : 'warn');
+    }
+
+    async function fetchJson(url, opts={}) {
+      const res = await fetch(url, opts);
+      if (!res.ok) throw new Error(await res.text());
       return res.json();
     }
 
-    // Simple/Advanced toggle
-    const simpleBtn = document.getElementById('simple-btn');
-    const advancedBtn = document.getElementById('advanced-btn');
-    const simpleView = document.getElementById('simple-view');
-    const advancedView = document.getElementById('advanced-view');
-    const viewLabel = document.getElementById('view-mode-label');
-    const resetBtn = document.getElementById('reset-btn');
-    function showSimple() {
-      simpleView.classList.remove('hidden');
-      advancedView.classList.add('hidden');
-      viewLabel.textContent = 'Simple View';
-      viewLabel.className = 'badge ok';
-    }
-    function showAdvanced() {
-      simpleView.classList.add('hidden');
-      advancedView.classList.remove('hidden');
-      viewLabel.textContent = 'Advanced View';
-      viewLabel.className = 'badge warn';
-    }
-    simpleBtn.addEventListener('click', showSimple);
-    advancedBtn.addEventListener('click', showAdvanced);
-    if (resetBtn) {
-      resetBtn.addEventListener('click', ()=>{ fetch('/reset_state',{method:'POST'}).then(()=>loadStatus()); });
-    }
-    showSimple();
-
-    function setBadge(el, text, ok) {
-      el.textContent = text;
-      el.className = ok ? 'badge ok' : 'badge warn';
-    }
-
-    async function safePost(url, payload) {
-      const opts = {method:'POST'};
-      if (payload) opts.body = JSON.stringify(payload);
-      try { await fetchJson(url, opts); } catch (e) { console.error(e); }
-    }
-
-    async function runFtmo() { await safePost('/run_ftmo'); }
-    async function runFtmoMulti() { await safePost('/run_ftmo_multi'); }
-    async function runFtmoExp() { await safePost('/run_ftmo_exp'); }
-    async function runFtmoExpMulti() { await safePost('/run_ftmo_exp_multi'); }
-    async function runFtmoExpV3() { await safePost('/run_ftmo_exp_v3'); }
-    async function runFtmoExpV3Multi() { await safePost('/run_ftmo_exp_v3_multi'); }
-    async function runExpOpt() { await safePost('/run_exp_optimizer'); }
-    async function runExpOptKd() {
-      try {
-        const res = await fetch('/run_exp_v2_kd_primary_optimizer', {method:'POST'});
-        if (!res.ok) {
-          const msg = await res.json().catch(()=>({}));
-          alert(`KD optimizer failed to start: ${msg.error || res.status}`);
-        }
-      } catch(e){ console.error(e); alert('KD optimizer start failed'); }
-    }
-    async function runExpOptV3() {
-      try {
-        const res = await fetch('/run_exp_v3_optimizer', {method:'POST'});
-        if (!res.ok) {
-          const msg = await res.json().catch(()=>({}));
-          alert(`Dynasty optimizer failed to start: ${msg.error || res.status}`);
-        }
-      } catch(e){ console.error(e); alert('Dynasty optimizer start failed'); }
-    }
-    async function applyExpV3Config() { await safePost('/apply_exp_v3_config'); }
-    async function applyExpConfig() { await safePost('/apply_exp_v2_config'); }
-    async function runResearch() { await safePost('/run_research'); }
-    async function runGbpjpy() { await safePost('/run_gbpjpy_test'); }
-    function downloadFtmo() { window.location.href = '/download_ftmo_json'; }
-    function downloadShadow() { window.location.href = '/download_shadow_log'; }
-    function downloadDemo() { window.location.href = '/download_demo_log'; }
-    async function runExpV3Fastwindows() {
-      try {
-        const res = await fetch('/run_exp_v3_fastwindows', {method:'POST'});
-        if (!res.ok) {
-          const msg = await res.json().catch(()=>({}));
-          alert(`Dynasty fastwindows failed to start: ${msg.missing ? 'Missing history: '+ msg.missing.join(', ') : res.status}`);
-        }
-      } catch(e){ console.error(e); alert('Dynasty fastwindows start failed'); }
-    }
-    async function runDynastyAll() {
-      try { await runExpOptV3(); } catch(e){}
-      try { await runFtmoExpV3(); } catch(e){}
-      try { await runFtmoExpV3Multi(); } catch(e){}
-      try { await runExpV3Fastwindows(); } catch(e){}
-    }
-    async function checkMarketData() {
-      try {
-        const res = await fetch('/check_market_data');
-        const data = await res.json();
-        if (res.ok && data.ok) {
-          alert('Market data OK for USDJPY/GBPJPY M5/M15/H1.');
-        } else {
-          const miss = (data.missing || []).join(', ');
-          alert(`Missing history: ${miss || 'Unknown'}. Open MT5 → Tools → History Center → Download M5/M15/H1 for USDJPY and M5/M15 for GBPJPY.`);
-        }
-      } catch (e) {
-        alert('Error checking market data.');
-      }
-    }
-
     async function startBot() {
-      const portfolio = document.getElementById('portfolio-select').value;
       const mode = document.getElementById('mode-select').value;
-      try {
-        await fetchJson('/start', {method:'POST', body: JSON.stringify({portfolio, mode})});
-      } catch(e){ console.error(e); }
-      refreshAll();
+      const portfolio = document.getElementById('portfolio-select').value;
+      await fetchJson('/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode, portfolio})});
     }
+
     async function stopBot() {
-      try { await fetchJson('/stop', {method:'POST'}); } catch(e){ console.error(e); }
-      refreshAll();
+      await fetchJson('/stop', {method:'POST'});
+    }
+
+    function setGauge(id, value, maxAbs) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const abs = Math.min(Math.abs(value || 0), maxAbs);
+      const pct = (abs / maxAbs) * 100;
+      el.style.background = `conic-gradient(var(--accent) ${pct}%, #243352 0)`;
     }
 
     function renderComparison(data) {
+      if (!data) return 'No data';
       const rows = [];
-      const tags = {
-        'V3 (USDJPY)': 'Production – FTMO #1',
-        'Multi': 'Production – FTMO #2',
-        'GBPJPY Core': 'Production – GBP',
-        'EXP_V2 (USDJPY)': 'Experimental – Death',
-        'EXP_V2 Multi': 'Experimental – Death (Multi)',
-        'EXP_V3 (Dynasty)': 'Experimental – Dynasty',
-        'EXP_V3 Multi': 'Experimental – Dynasty (Multi)',
-      };
       const addRow = (label, obj) => {
-        const symPass = obj && obj.symbol_pass_counts ? JSON.stringify(obj.symbol_pass_counts) : 'N/A';
-        const tag = tags[label] || '';
-        const badge = tag ? `<span class="badge ${tag.includes('Production')?'ok':'warn'}">${tag}</span>` : '';
-        rows.push(`
-          <tr>
-            <td>${label} ${badge}</td>
-            <td title="Pass Rate: % of FTMO full pipeline runs that passed P1+P2">${obj ? (obj.pass_rate_30d ?? obj.pass_rate ?? 'N/A') : 'N/A'}</td>
-            <td title="Avg Return live leg">${obj ? (obj.avg_return_30d ?? obj.avg_return ?? 'N/A') : 'N/A'}</td>
-            <td title="Worst Max Drawdown seen">${obj ? (obj.max_dd_30d ?? obj.max_dd ?? obj.avg_max_dd ?? 'N/A') : 'N/A'}</td>
-            <td title="Typical days to payout">${obj && obj.days_to_payout ? (obj.days_to_payout.median ?? 'N/A') : 'N/A'}</td>
-            <td>${symPass}</td>
-          </tr>
-        `);
+        if (!obj) return;
+        const pr = obj.pass_rate ?? obj.pipeline_success_rate ?? null;
+        const dd = obj.max_dd ?? obj.max_dd_live_worst ?? null;
+        const days = obj.median_days_to_payout ?? obj.total_days_to_payout_median ?? null;
+        rows.push(`<tr>
+          <td>${label}</td>
+          <td>${pr != null ? (pr * 100).toFixed(1) + '%' : '-'}</td>
+          <td>${obj.avg_return != null ? obj.avg_return.toFixed(2) + '%' : '-'}</td>
+          <td>${dd != null ? (dd * 100).toFixed(2) + '%' : '-'}</td>
+          <td>${days != null ? days.toFixed(1) : '-'}</td>
+          <td>${obj.symbol_pass_counts ? JSON.stringify(obj.symbol_pass_counts) : '-'}</td>
+        </tr>`);
       };
-      addRow('V3 (USDJPY)', data.v3);
+      addRow('Curry (V3)', data.v3);
       addRow('GBPJPY Core', data.gbpjpy_core);
       addRow('Multi', data.multi_symbol);
       addRow('EXP_V2 (USDJPY)', data.exp_v2);
@@ -396,24 +462,19 @@
       addRow('EXP_V3 (Dynasty)', data.exp_v3);
       addRow('EXP_V3 Multi', data.exp_v3_multi);
       return `<table class="table">
-        <tr><th>Lineup</th><th>Pass Rate</th><th>Avg Return</th><th>Worst DD</th><th>Median Days to Payout</th><th>Symbol Pass Counts</th></tr>
+        <tr><th>Lineup</th><th>Pass Rate</th><th>Avg Return</th><th>Worst DD</th><th>Median Days</th><th>Symbol Pass</th></tr>
         ${rows.join('')}
       </table>`;
     }
 
     function renderRoster(roster) {
       const rows = Object.entries(roster || {}).map(([name, info]) => {
-        return `<div class="tile">
-          <h4>${name}</h4>
-          <div style="font-size:12px; color:${'var(--muted)'};">${info.role || ''}</div>
-          <div class="tile-wrap">
-            <div><strong>Symbol:</strong> ${info.symbol || '-'}</div>
-            <div><strong>Regime:</strong> ${info.regime || '-'}</div>
-            <div><strong>Minutes:</strong> ${info.risk || '-'}</div>
-          </div>
+        return `<div class="lineup-item">
+          <div>${name}</div>
+          <div class="lineup-status">${info.role || 'Online'}</div>
         </div>`;
       });
-      return `<div class="tile-wrap">${rows.join('')}</div>`;
+      return `<div class="lineup-list">${rows.join('')}</div>`;
     }
 
     function renderEdgeImpact(impact) {
@@ -436,73 +497,89 @@
     function renderLatestTrades(trades) {
       if (!trades || !trades.length) return 'No trades yet.';
       const sorted = [...trades].sort((a,b) => (b.timestamp||'').localeCompare(a.timestamp||''));
-      const rows = sorted.map(t => `
-        <tr>
-          <td>${t.timestamp || ''}</td>
-          <td>${t.symbol || ''}</td>
-          <td>${t.strategy_name_friendly || t.strategy_id || ''}</td>
-          <td>${(t.side || '').toUpperCase()}</td>
-          <td>${t.pnl_pct != null ? t.pnl_pct.toFixed(4) + '%' : '0%'}</td>
-          <td>${t.equity_after_trade != null ? t.equity_after_trade.toFixed(2) : ''}</td>
-        </tr>
-      `);
-      return `<div style="max-height:320px; overflow-y:auto;">
-        <table class="table">
-          <tr><th>Time</th><th>Symbol</th><th>Player</th><th>Side</th><th>PnL%</th><th>Equity After</th></tr>
-          ${rows.join('')}
-        </table>
+      return `<div class="latest-trades">
+        ${sorted.map(t => `
+          <div class="play-item">
+            <strong>${t.timestamp || ''}</strong> | ${t.symbol || ''} | ${t.strategy_name_friendly || t.strategy_id || ''} ${t.side || ''} | ${typeof t.pnl_pct === 'number' ? t.pnl_pct.toFixed(4)+'%' : '0%'}
+          </div>`).join('')}
       </div>`;
+    }
+
+    function updateChart(trades) {
+      const canvas = document.getElementById('equity-chart');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      canvas.width = width;
+      canvas.height = height;
+      ctx.clearRect(0,0,width,height);
+      const pts = trades.filter(t => typeof t.equity_after_trade === 'number');
+      if (!pts.length) {
+        ctx.fillStyle = '#5b6b8a';
+        ctx.font = '12px Space Grotesk';
+        ctx.fillText('No equity data yet', 10, 20);
+        return;
+      }
+      const values = pts.map(p => p.equity_after_trade);
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const range = max - min || 1;
+      ctx.strokeStyle = '#2ecc71';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      values.forEach((v, i) => {
+        const x = (i / (values.length - 1)) * (width - 20) + 10;
+        const y = height - ((v - min) / range) * (height - 20) - 10;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
     }
 
     function renderCoachSummary(status, metrics) {
       const hbFresh = metrics && metrics.last_heartbeat_time;
-      const hbText = hbFresh ? `Heartbeat OK – last: ${metrics.last_heartbeat_time}` : 'Heartbeat stale or missing';
-      const hbClass = hbFresh ? 'badge ok' : 'badge warn';
+      const hbText = hbFresh ? `Heartbeat OK - last: ${metrics.last_heartbeat_time}` : 'Heartbeat stale or missing';
       const runnerText = status.running ? 'RUNNING' : 'STOPPED';
-      const runnerClass = status.running ? 'badge ok' : 'badge err';
-      const stopReason = status.last_stop_reason ? `<div style="color:var(--warn); font-size:12px;">Stop reason: ${status.last_stop_reason}</div>` : '';
       const symList = (metrics && metrics.symbols_today && metrics.symbols_today.length) ? metrics.symbols_today.join(', ') : '-';
+      const stopReason = status.last_stop_reason ? `Stop reason: ${status.last_stop_reason}` : '';
+      const balance = metrics.account_balance != null ? metrics.account_balance.toFixed(2) : '-';
+      const equity = metrics.account_equity != null ? metrics.account_equity.toFixed(2) : '-';
       return `
         <div class="tile-wrap">
           <div class="tile"><h4>Mode</h4><div class="metric">${status.mode || '-'}</div></div>
           <div class="tile"><h4>Lineup</h4><div class="metric">${status.portfolio || '-'}</div></div>
-          <div class="tile"><h4>Runner</h4><span class="${runnerClass}">${runnerText}</span><br/><span class="${hbClass}">${hbText}</span></div>
+          <div class="tile"><h4>Runner</h4><div class="metric">${runnerText}</div><div style="font-size:12px;">${hbText}</div></div>
           <div class="tile"><h4>Trades Today</h4><div class="metric">${metrics.trades_today ?? 0}</div><div style="font-size:12px;">Wins: ${metrics.wins_today ?? 0} | Losses: ${metrics.losses_today ?? 0}</div></div>
           <div class="tile"><h4>PnL Today</h4><div class="metric">${metrics.pnl_today_pct != null ? metrics.pnl_today_pct.toFixed(4)+'%' : '0%'}</div><div style="font-size:12px;">Max DD: ${metrics.max_dd_today_pct != null ? metrics.max_dd_today_pct.toFixed(4)+'%' : '-'}</div></div>
           <div class="tile"><h4>Symbols</h4><div class="metric">${symList}</div><div style="font-size:12px;">Last trade: ${metrics.last_trade_time || '-'}</div></div>
-          <div class="tile"><h4>Equity</h4><div class="metric">Start: ${metrics.start_equity_today ?? '-'} | Now: ${metrics.end_equity_today ?? '-'}</div></div>
+          <div class="tile"><h4>Equity</h4><div class="metric">Balance: ${balance} | Equity: ${equity}</div></div>
         </div>
-        ${stopReason}
+        <div style="font-size:12px; color:var(--muted); margin-top:6px;">${stopReason}</div>
       `;
-    }
-
-    function fillProgress(idInner, idText, pct, eta) {
-      const inner = document.getElementById(idInner);
-      const txt = document.getElementById(idText);
-      if (inner) inner.style.width = `${Math.max(0, Math.min(100, pct||0))}%`;
-      if (txt) txt.textContent = `Progress: ${pct != null ? pct.toFixed(1) : '0'}% ${eta ? 'ETA '+eta : ''}`;
     }
 
     async function refreshAll() {
       let status = {};
       let live = {};
       let recent = [];
-      try {
-        status = await fetchJson('/status');
-      } catch (e) { console.error(e); }
-      try {
-        live = await fetchJson('/live_metrics');
-      } catch (e) { console.error(e); }
+      try { status = await fetchJson('/status'); } catch (e) {}
+      try { live = await fetchJson('/live_metrics'); } catch (e) {}
       try {
         const rt = await fetchJson('/recent_trades');
         recent = Array.isArray(rt) ? rt : (rt.trades || []);
-      } catch (e) { console.error(e); }
-      const coach = document.getElementById('coach-summary');
-      if (coach) coach.innerHTML = renderCoachSummary(status, live);
-      document.getElementById('ov-lineup').textContent = status.portfolio || '-';
-      document.getElementById('ov-pnl').textContent = live.pnl_today_pct != null ? live.pnl_today_pct.toFixed(4)+'%' : '-';
-      document.getElementById('ov-dd').textContent = live.max_dd_today_pct != null ? live.max_dd_today_pct.toFixed(4)+'%' : '-';
-      document.getElementById('ov-guard').textContent = live.guardrail_hits != null ? live.guardrail_hits : '-';
+      } catch (e) {}
+      lastTrades = recent;
+
+      // top bar
+      const balanceEl = document.getElementById('account-balance');
+      const equityEl = document.getElementById('account-equity');
+      if (balanceEl) balanceEl.textContent = live.account_balance != null ? live.account_balance.toFixed(2) : '-';
+      if (equityEl) equityEl.textContent = live.account_equity != null ? live.account_equity.toFixed(2) : '-';
+      const statusEl = document.getElementById('system-status');
+      const dot = document.getElementById('system-dot');
+      if (statusEl) statusEl.textContent = status.running ? 'ONLINE' : 'OFFLINE';
+      if (dot) dot.style.background = status.running ? 'var(--accent)' : '#666';
+
       setBadge(document.getElementById('mode-badge'), `Game Mode: ${status.mode || '?'}`, !!status.mode);
       setBadge(document.getElementById('portfolio-badge'), `Lineup: ${status.portfolio || '?'}`, !!status.portfolio);
       setBadge(document.getElementById('runner-badge'), `Runner: ${status.running ? 'RUNNING' : 'STOPPED'}`, status.running);
@@ -518,9 +595,24 @@
           stop.textContent = status.last_stop_reason;
         } else stop.style.display = 'none';
       }
-      document.getElementById('latest-trades-simple').innerHTML = renderLatestTrades(recent.slice(0, 20));
-      document.getElementById('latest-trades-adv').innerHTML = renderLatestTrades(recent);
-      // advanced sections
+
+      // coach summary
+      const coach = document.getElementById('coach-summary');
+      if (coach) coach.innerHTML = renderCoachSummary(status, live);
+
+      // gauges
+      setGauge('dd-gauge', live.max_dd_today_pct || 0, 10);
+      setGauge('pnl-gauge', live.pnl_today_pct || 0, 10);
+      const ddVal = document.getElementById('dd-value');
+      const pnlVal = document.getElementById('pnl-value');
+      if (ddVal) ddVal.textContent = (live.max_dd_today_pct != null ? live.max_dd_today_pct.toFixed(2) : '-') + '%';
+      if (pnlVal) pnlVal.textContent = (live.pnl_today_pct != null ? live.pnl_today_pct.toFixed(2) : '-') + '%';
+
+      document.getElementById('latest-trades-simple').innerHTML = renderLatestTrades(recent);
+      const adv = document.getElementById('latest-trades-adv');
+      if (adv) adv.innerHTML = renderLatestTrades(recent);
+      updateChart(recent);
+
       try {
         const cmp = await fetchJson('/comparison');
         document.getElementById('comparison').innerHTML = renderComparison(cmp);
@@ -534,20 +626,6 @@
         document.getElementById('edge-impact').innerHTML = renderEdgeImpact(edge);
       } catch (e) { document.getElementById('edge-impact').textContent = 'Error loading edge impact'; }
       try {
-        const opt = await fetchJson('/optimizer_results');
-        document.getElementById('exp-optimizer').textContent = JSON.stringify(opt, null, 2);
-        fillProgress('kd-opt-progress-inner', 'kd-opt-progress-text', opt.kd_primary?.progress_pct || 0, opt.kd_primary?.eta);
-        fillProgress('v3-opt-progress-inner', 'v3-opt-progress-text', opt.exp_v3?.progress_pct || 0, opt.exp_v3?.eta);
-      } catch (e) { document.getElementById('exp-optimizer').textContent = 'Error loading optimizer'; }
-      try {
-        const dyn = await fetchJson('/exp_v3_selected');
-        document.getElementById('dynasty-best').textContent = JSON.stringify(dyn, null, 2);
-      } catch (e) { document.getElementById('dynasty-best').textContent = 'Error loading dynasty best'; }
-      try {
-        const dc = await fetchJson('/depth_chart');
-        document.getElementById('depth-chart').innerHTML = JSON.stringify(dc, null, 2);
-      } catch (e) { document.getElementById('depth-chart').textContent = 'Error loading depth chart'; }
-      try {
         const fd = await fetchJson('/tasks');
         document.getElementById('flight-deck').innerHTML = fd.map(x=>`<div>${x}</div>`).join('');
       } catch (e) { document.getElementById('flight-deck').textContent = 'Error loading tasks'; }
@@ -555,18 +633,11 @@
         const rl = await fetchJson('/recent_reports');
         document.getElementById('recent-list').innerHTML = rl.map(x=>`<div>${x}</div>`).join('');
       } catch (e) { document.getElementById('recent-list').textContent = 'Error loading outputs'; }
-      try {
-        const ev = await fetchJson('/events_stream_snapshot');
-        document.getElementById('events').innerHTML = ev.map(x=>`<div class="event-item">${x}</div>`).join('');
-      } catch (e) { document.getElementById('events').textContent = 'Error loading events'; }
-      try {
-        const tl = await fetchJson('/task_logs_tail');
-        document.getElementById('task-logs').textContent = tl.join('\\n');
-      } catch (e) { document.getElementById('task-logs').textContent = 'Error loading task logs'; }
     }
 
     refreshAll();
     setInterval(refreshAll, 7000);
+    window.addEventListener('resize', () => updateChart(lastTrades));
 
     async function askAi() {
       const input = document.getElementById('ai-input');

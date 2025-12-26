@@ -33,8 +33,12 @@ class BrokerAdapter(ABC):
 
 
 class DummyBrokerAdapter(BrokerAdapter):
+    def __init__(self) -> None:
+        self.last_ticket: Optional[int] = None
+
     def send_order(self, trade) -> bool:
         print(f"[DummyBroker] EXECUTE: {trade}")
+        self.last_ticket = None
         return True
 
     def log(self, message: str) -> None:

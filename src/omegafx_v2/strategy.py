@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 from .config import DEFAULT_STRATEGY, InstrumentSpec, StrategyConfig, XAUUSD_SPEC
 
@@ -19,6 +20,14 @@ class PlannedTrade:
     take_profit_price: float
     risk_pips: float
     reward_pips: float
+    magic_number: Optional[int] = None
+    comment: Optional[str] = None
+    strategy_id: Optional[str] = None
+    player_name: Optional[str] = None
+    regime: Optional[str] = None
+    reason_code: Optional[str] = None
+    risk_scale: Optional[float] = None
+    spread: Optional[float] = None
 
 
 def plan_single_trade(

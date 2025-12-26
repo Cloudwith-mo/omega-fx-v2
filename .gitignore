@@ -8,4 +8,5 @@ omegafx.log
 tmp_tail.txt
 *.egg-info/
 mt5_creds.local.bat
+mt5_creds.*.local.bat
 *.local.bat

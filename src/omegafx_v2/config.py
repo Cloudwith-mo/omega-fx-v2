@@ -709,6 +709,18 @@ DEFAULT_PORTFOLIO_USDJPY_FASTPASS_V3 = PortfolioProfile(
     portfolio_max_loss_pct=0.095,
 )
 
+# USDJPY FastPass Core (London + Liquidity) for backward compatibility
+DEFAULT_PORTFOLIO_USDJPY_FASTPASS_CORE = PortfolioProfile(
+    name="USDJPY_FastPass_Core",
+    strategies=[
+        DEFAULT_PROFILE_USDJPY_LONDON_M15_V1,
+        DEFAULT_PROFILE_USDJPY_LIQUI_M15_V1,
+    ],
+    risk_scales=[1.5, 0.5],
+    portfolio_daily_loss_pct=0.03,
+    portfolio_max_loss_pct=0.095,
+)
+
 # Placeholder GBPJPY fast-pass edges (tuning later)
 DEFAULT_PROFILE_GBPJPY_LONDON_M15_V1 = StrategyProfile(
     name="GBPJPY_M15_LondonBreakout_V1",

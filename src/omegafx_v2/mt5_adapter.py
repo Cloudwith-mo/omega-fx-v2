@@ -35,6 +35,7 @@ class Mt5BrokerAdapter(BrokerAdapter):
         self.point: Optional[float] = None
         self.stop_level: Optional[float] = None
         self.contract_size: Optional[float] = None
+        self.last_ticket: Optional[int] = None
 
         if self.dry_run:
             self.log("MT5 adapter in DRY RUN mode (no real connection).")
@@ -48,6 +49,7 @@ class Mt5BrokerAdapter(BrokerAdapter):
         Map a PlannedTrade to an MT5 market order. Long-only assumed for now.
         """
         if self.dry_run:
+            self.last_ticket = None
             self.log(
                 f"DRY RUN: would send order: symbol={self.symbol}, lot={trade.lot_size}, "
                 f"sl={trade.stop_loss_price}, tp={trade.take_profit_price}"
@@ -69,17 +71,19 @@ class Mt5BrokerAdapter(BrokerAdapter):
             self.log("Aborting order due to invalid SL/TP distances")
             return False
 
+        magic = trade.magic_number if trade.magic_number is not None else 20251212
+        comment = trade.comment if trade.comment is not None else "Omega-FX-v2"
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
-            "symbol": self.symbol,
+            "symbol": trade.symbol,
             "volume": trade.lot_size,
             "type": mt5.ORDER_TYPE_BUY if trade.direction == "long" else mt5.ORDER_TYPE_SELL,
             "price": price,
             "sl": sl,
             "tp": tp,
             "deviation": 10,
-            "magic": 20251212,
-            "comment": "Omega-FX-v2",
+            "magic": magic,
+            "comment": comment,
             "type_filling": mt5.ORDER_FILLING_FOK,
             "type_time": mt5.ORDER_TIME_GTC,
         }
@@ -90,6 +94,7 @@ class Mt5BrokerAdapter(BrokerAdapter):
             return False
 
         if result.retcode == mt5.TRADE_RETCODE_DONE:
+            self.last_ticket = result.order
             self.log(f"Order success: ticket={result.order}")
             return True
 
