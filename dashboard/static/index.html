@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>USDJPY FastPass Dashboard</title>
+  <title>Omega-FX Dashboard</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Space+Grotesk:wght@400;600;700&display=swap');
     :root {
@@ -122,6 +122,10 @@
       font-weight: 600;
       cursor: pointer;
     }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
     .btn-start { background: var(--accent); color: #04130b; }
     .btn-stop { background: var(--error); color: #fff; }
     .btn-ghost { background: #1b2a44; color: var(--ink); }
@@ -136,10 +140,45 @@
     .badge.ok { color: var(--accent); }
     .badge.warn { color: var(--warn); }
     .badge.err { color: var(--error); }
+    .bot-banner {
+      margin: 12px 0;
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: #101a2f;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+    }
+    .bot-banner.ok { color: var(--accent); }
+    .bot-banner.warn { color: var(--warn); }
+    .bot-banner.err { color: var(--error); }
     .grid {
       display: grid;
       grid-template-columns: 280px minmax(520px, 1fr) 360px;
       gap: 14px;
+    }
+    .simple-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(280px, 1fr));
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+    .readiness-list {
+      display: grid;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .readiness-item strong {
+      color: var(--ink);
+      font-weight: 600;
+    }
+    body.simple-mode .grid,
+    body.simple-mode #advanced-view {
+      display: none;
+    }
+    @media (max-width: 980px) {
+      .simple-grid { grid-template-columns: 1fr; }
     }
     .card {
       background: var(--panel);
@@ -153,6 +192,24 @@
       color: var(--muted);
       text-transform: uppercase;
       letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .panel-tag {
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid #22314f;
+      background: #0d172c;
+      letter-spacing: 0.6px;
+    }
+    .panel-tag.live { color: var(--accent); }
+    .panel-tag.research { color: var(--warn); }
+    .panel-research { transition: opacity 0.2s ease, filter 0.2s ease; }
+    .live-active .panel-research {
+      opacity: 0.35;
+      filter: grayscale(35%);
     }
     .gauge-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .gauge {
@@ -207,8 +264,14 @@
       font-size: 12px;
       color: var(--muted);
     }
+    .risk-brief {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
     .latest-trades {
-      max-height: 320px;
+      max-height: 420px;
       overflow-y: auto;
     }
     .play-item { padding: 6px 0; border-bottom: 1px solid #1b2a44; }
@@ -231,12 +294,17 @@
     <div class="topbar">
       <div class="brand">
         <div class="logo"></div>
-        <div>Omega-FX</div>
+        <div>
+          <div>Omega-FX</div>
+          <div id="account-identity" style="font-size:12px; color:var(--muted);">Account: UNKNOWN</div>
+          <div id="mt5-details" style="font-size:11px; color:var(--muted);">MT5: UNKNOWN</div>
+        </div>
       </div>
       <div class="top-metrics">
         <div class="metric-card">
           <span>Account Balance</span>
           <strong id="account-balance">-</strong>
+          <div id="account-snapshot-age" style="font-size:11px; color:var(--muted); margin-top:4px;">Updated: -</div>
         </div>
         <div class="metric-card">
           <span>Equity</span>
@@ -254,10 +322,15 @@
         <span id="mode-badge" class="badge warn">Game Mode: ?</span>
         <span id="portfolio-badge" class="badge warn">Lineup: ?</span>
         <span id="runner-badge" class="badge warn">Runner: ?</span>
-        <span id="mt5-env-badge" class="badge warn">MT5 env: ?</span>
+        <span id="bot-badge" class="badge warn">BOT: ?</span>
+        <span id="mt5-env-badge" class="badge warn">Runner MT5: ?</span>
+        <span id="evidence-badge" class="badge warn">Evidence: ?</span>
+        <span id="ai-badge" class="badge warn">AI: ?</span>
         <span id="heartbeat" class="badge warn">Heartbeat: ?</span>
       </div>
     </div>
+
+    <div id="bot-status-banner" class="bot-banner warn">BOT: ?</div>
 
     <div class="control-bar">
       <div class="controls">
@@ -275,17 +348,30 @@
             <option value="multi">Splash Brothers Lineup (Multi)</option>
           </select>
         </label>
-        <button class="btn-start" onclick="startBot()">Enable Bot</button>
+        <span id="mode-lock-note" class="badge warn" style="display:none;">locked while ARMED</span>
+        <button class="btn-start" id="start-btn" onclick="startBot()">Enable Bot</button>
         <button class="btn-stop" onclick="stopBot()">Disable Bot</button>
         <button class="btn-ghost" id="reset-btn">Hard Reset State</button>
         <span id="stop-reason" class="badge warn" style="display:none;"></span>
       </div>
     </div>
 
+    <div class="simple-grid" id="simple-dashboard">
+      <div class="card">
+        <h3>Readiness <span class="panel-tag live">LIVE</span></h3>
+        <div id="simple-readiness" class="readiness-list">Loading...</div>
+      </div>
+      <div class="card">
+        <h3>Signals (Omega) <span class="panel-tag live">LIVE</span></h3>
+        <div id="simple-activity-stats" class="readiness-list">Loading...</div>
+        <div id="latest-trades-simple" style="margin-top:10px;">Loading...</div>
+      </div>
+    </div>
+
     <div class="grid">
       <div>
         <div class="card">
-          <h3>Risk Management (Draymond)</h3>
+          <h3>Risk Management (Draymond) <span class="panel-tag live">LIVE</span></h3>
           <div class="gauge-wrap">
             <div>
               <div id="dd-gauge" class="gauge">
@@ -306,39 +392,44 @@
           </div>
         </div>
         <div class="card">
-          <h3>Coach Summary</h3>
+          <h3>Coach Summary <span class="panel-tag live">LIVE</span></h3>
           <div id="coach-summary">Loading...</div>
         </div>
-        <div class="card">
-          <h3>Active Lineup</h3>
+        <div class="card panel-research">
+          <h3>AI Risk Brief <span class="panel-tag research">RESEARCH</span></h3>
+          <div id="ai-risk-brief" class="risk-brief">Loading...</div>
+          <div id="ai-risk-brief-meta" style="font-size:11px; color:var(--muted); margin-top:6px;"></div>
+        </div>
+        <div class="card panel-research">
+          <h3>Active Lineup <span class="panel-tag research">RESEARCH</span></h3>
           <div id="roster">Loading...</div>
         </div>
         <div class="card">
-          <h3>Manual Override</h3>
+          <h3>Manual Override <span class="panel-tag live">LIVE</span></h3>
           <button class="btn-stop" onclick="stopBot()">Emergency Stop</button>
         </div>
       </div>
 
       <div>
         <div class="card">
-          <h3>Live Data</h3>
+          <h3>Live Data <span class="panel-tag live">LIVE</span></h3>
           <div class="chart">
             <canvas id="equity-chart"></canvas>
           </div>
         </div>
-        <div class="card">
-          <h3>Team Stats</h3>
+        <div class="card panel-research">
+          <h3>Team Stats <span class="panel-tag research">RESEARCH</span></h3>
           <div id="comparison">Loading...</div>
         </div>
       </div>
 
       <div>
         <div class="card">
-          <h3>Play-by-Play</h3>
-          <div id="latest-trades-simple">Loading...</div>
+          <h3>Play-by-Play <span class="panel-tag live">LIVE</span></h3>
+          <div id="latest-trades-simple-old">Loading...</div>
         </div>
-        <div class="card ai-panel">
-          <h3>AI Coach & Co-Pilot Assist</h3>
+        <div class="card ai-panel panel-research">
+          <h3>AI Coach & Co-Pilot Assist <span class="panel-tag research">RESEARCH</span></h3>
           <div id="ai-chat-log" style="max-height:220px; overflow-y:auto; font-size:12px; color:var(--muted); border:1px solid #1b2a44; padding:8px; border-radius:8px; margin-bottom:8px;">
             No messages yet.
           </div>
@@ -363,20 +454,20 @@
     </div>
 
     <div id="advanced-view" class="hidden">
-      <div class="card">
-        <h3>Latest Trades (Detailed)</h3>
+      <div class="card panel-research">
+        <h3>Latest Trades (Detailed) <span class="panel-tag research">RESEARCH</span></h3>
         <div id="latest-trades-adv">Loading...</div>
       </div>
-      <div class="card">
-        <h3>Player Impact / Trades & PnL</h3>
+      <div class="card panel-research">
+        <h3>Player Impact / Trades & PnL <span class="panel-tag research">RESEARCH</span></h3>
         <div id="edge-impact">Loading...</div>
       </div>
-      <div class="card">
-        <h3>Task Flight Deck</h3>
+      <div class="card panel-research">
+        <h3>Task Flight Deck <span class="panel-tag research">RESEARCH</span></h3>
         <div id="flight-deck">Loading...</div>
       </div>
-      <div class="card">
-        <h3>Recent Outputs</h3>
+      <div class="card panel-research">
+        <h3>Recent Outputs <span class="panel-tag research">RESEARCH</span></h3>
         <div id="recent-list">Loading...</div>
       </div>
     </div>
@@ -389,6 +480,8 @@
     const viewLabel = document.getElementById('view-mode-label');
     const resetBtn = document.getElementById('reset-btn');
     let lastTrades = [];
+    let lastStatus = {};
+    document.body.classList.add('simple-mode');
 
     if (simpleBtn && advancedBtn) {
       simpleBtn.onclick = () => {
@@ -407,10 +500,63 @@
       };
     }
 
-    function setBadge(el, text, ok) {
+    function setBadge(el, text, state) {
       if (!el) return;
       el.textContent = text;
-      el.className = 'badge ' + (ok ? 'ok' : 'warn');
+      let cls = 'warn';
+      if (state === true || state === 'ok') cls = 'ok';
+      else if (state === 'err') cls = 'err';
+      el.className = `badge ${cls}`;
+    }
+
+    function formatAge(seconds) {
+      if (seconds == null || Number.isNaN(seconds)) return 'unknown';
+      return `${Math.max(0, Math.round(seconds))}s`;
+    }
+
+    function formatTickAge(seconds) {
+      if (seconds == null || Number.isNaN(seconds)) return 'UNKNOWN';
+      const total = Math.max(0, Math.round(seconds));
+      if (total < 60) return `${total}s`;
+      const minutes = Math.round(total / 60);
+      if (minutes < 60) return `${minutes}m`;
+      const hours = Math.round(minutes / 60);
+      if (hours < 24) return `${hours}h`;
+      const days = Math.round(hours / 24);
+      return `${days}d`;
+    }
+
+    function buildIdentityLabel(identity, status, reason) {
+      const accountId = identity.account_id || '?';
+      if (status !== 'ok') {
+        const why = reason || status || 'unknown';
+        return `Account ${accountId} - UNKNOWN (${why})`;
+      }
+      const login = identity.mt5_account_login || 'UNKNOWN';
+      const server = identity.mt5_account_server || 'UNKNOWN';
+      const company = identity.mt5_company || identity.mt5_terminal_name || '';
+      const companyText = company ? ` (${company})` : '';
+      return `Account ${accountId} - ${login} @ ${server}${companyText}`;
+    }
+
+    function buildIdentityTitle(identity, status) {
+      if (status !== 'ok') return 'Omega-FX Dashboard - UNKNOWN';
+      const accountId = identity.account_id || '?';
+      const login = identity.mt5_account_login || 'UNKNOWN';
+      const server = identity.mt5_account_server || 'UNKNOWN';
+      const company = identity.mt5_company || identity.mt5_terminal_name || '';
+      const companyText = company ? ` (${company})` : '';
+      return `Account ${accountId} - ${login} @ ${server}${companyText}`;
+    }
+
+    function buildMismatchText(identity) {
+      const expLogin = identity.expected_login || 'unset';
+      const expServer = identity.expected_server || 'unset';
+      const expCompany = identity.expected_company || 'unset';
+      const actLogin = identity.mt5_account_login || 'unknown';
+      const actServer = identity.mt5_account_server || 'unknown';
+      const actCompany = identity.mt5_company || 'unknown';
+      return `ACCOUNT MISMATCH | expected ${expLogin} @ ${expServer} (${expCompany}) | actual ${actLogin} @ ${actServer} (${actCompany})`;
     }
 
     async function fetchJson(url, opts={}) {
@@ -420,6 +566,12 @@
     }
 
     async function startBot() {
+      const lockStatus = ((lastStatus && lastStatus.identity_lock_status) || 'unknown').toLowerCase();
+      if (lockStatus && lockStatus !== 'ok') {
+        const reason = lastStatus.identity_lock_reason || '';
+        alert(`BOT LOCKED: ${reason || lockStatus}`);
+        return;
+      }
       const mode = document.getElementById('mode-select').value;
       const portfolio = document.getElementById('portfolio-select').value;
       await fetchJson('/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode, portfolio})});
@@ -505,7 +657,7 @@
       </div>`;
     }
 
-    function updateChart(trades) {
+    function updateChart(trades, metrics) {
       const canvas = document.getElementById('equity-chart');
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
@@ -515,13 +667,22 @@
       canvas.height = height;
       ctx.clearRect(0,0,width,height);
       const pts = trades.filter(t => typeof t.equity_after_trade === 'number');
-      if (!pts.length) {
+      let values = pts.map(p => p.equity_after_trade);
+      let waiting = false;
+      if (!values.length && metrics) {
+        const snapshotOk = (metrics.account_snapshot_status || '') === 'ok';
+        const fallback = metrics.end_equity_today ?? metrics.start_equity_today ?? (snapshotOk ? (metrics.account_equity ?? metrics.account_balance) : null);
+        if (typeof fallback === 'number' && fallback > 0) {
+          values = [fallback, fallback];
+          waiting = true;
+        }
+      }
+      if (!values.length) {
         ctx.fillStyle = '#5b6b8a';
         ctx.font = '12px Space Grotesk';
-        ctx.fillText('No equity data yet', 10, 20);
+        ctx.fillText('Waiting for signals', 10, 20);
         return;
       }
-      const values = pts.map(p => p.equity_after_trade);
       const min = Math.min(...values);
       const max = Math.max(...values);
       const range = max - min || 1;
@@ -534,6 +695,11 @@
         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       });
       ctx.stroke();
+      if (waiting) {
+        ctx.fillStyle = '#5b6b8a';
+        ctx.font = '12px Space Grotesk';
+        ctx.fillText('Waiting for signals', 10, 20);
+      }
     }
 
     function renderCoachSummary(status, metrics) {
@@ -542,8 +708,10 @@
       const runnerText = status.running ? 'RUNNING' : 'STOPPED';
       const symList = (metrics && metrics.symbols_today && metrics.symbols_today.length) ? metrics.symbols_today.join(', ') : '-';
       const stopReason = status.last_stop_reason ? `Stop reason: ${status.last_stop_reason}` : '';
-      const balance = metrics.account_balance != null ? metrics.account_balance.toFixed(2) : '-';
-      const equity = metrics.account_equity != null ? metrics.account_equity.toFixed(2) : '-';
+      const snapshotStatus = (metrics.account_snapshot_status || '').toLowerCase();
+      const snapshotOk = snapshotStatus === 'ok';
+      const balance = snapshotOk && metrics.account_balance != null ? metrics.account_balance.toFixed(2) : 'UNKNOWN';
+      const equity = snapshotOk && metrics.account_equity != null ? metrics.account_equity.toFixed(2) : 'UNKNOWN';
       return `
         <div class="tile-wrap">
           <div class="tile"><h4>Mode</h4><div class="metric">${status.mode || '-'}</div></div>
@@ -558,6 +726,27 @@
       `;
     }
 
+    async function refreshRiskBrief() {
+      const briefEl = document.getElementById('ai-risk-brief');
+      if (!briefEl) return;
+      try {
+        const data = await fetchJson('/ai_risk_brief');
+        briefEl.textContent = data.text || 'No brief yet.';
+        const meta = document.getElementById('ai-risk-brief-meta');
+        if (meta) {
+          const stamp = data.generated_at ? `Updated: ${data.generated_at}` : '';
+          const next = typeof data.next_update_in_seconds === 'number'
+            ? `Next refresh: ${data.next_update_in_seconds}s` : '';
+          const err = data.error ? `Status: ${data.error}` : '';
+          meta.textContent = [stamp, next, err].filter(Boolean).join(' | ');
+        }
+      } catch (e) {
+        briefEl.textContent = 'AI Risk Brief unavailable.';
+        const meta = document.getElementById('ai-risk-brief-meta');
+        if (meta) meta.textContent = '';
+      }
+    }
+
     async function refreshAll() {
       let status = {};
       let live = {};
@@ -569,12 +758,56 @@
         recent = Array.isArray(rt) ? rt : (rt.trades || []);
       } catch (e) {}
       lastTrades = recent;
+      lastStatus = status || {};
 
       // top bar
       const balanceEl = document.getElementById('account-balance');
       const equityEl = document.getElementById('account-equity');
-      if (balanceEl) balanceEl.textContent = live.account_balance != null ? live.account_balance.toFixed(2) : '-';
-      if (equityEl) equityEl.textContent = live.account_equity != null ? live.account_equity.toFixed(2) : '-';
+      const identity = status.identity || {};
+      const identityStatus = (status.identity_status || 'missing').toLowerCase();
+      const identityReason = status.identity_reason || status.identity_lock_reason || '';
+      const identityEl = document.getElementById('account-identity');
+      if (identityEl) identityEl.textContent = buildIdentityLabel(identity, identityStatus, identityReason);
+      document.title = buildIdentityTitle(identity, identityStatus);
+      const mt5DetailsEl = document.getElementById('mt5-details');
+      const mt5Connected = status.mt5_connected;
+      const mt5ConnText = mt5Connected === true ? 'CONNECTED' : (mt5Connected === false ? 'DISCONNECTED' : 'UNKNOWN');
+      const mt5TradeAllowed = status.mt5_trade_allowed;
+      const mt5TradeText = mt5TradeAllowed === true ? 'YES' : (mt5TradeAllowed === false ? 'NO' : 'UNKNOWN');
+      const mt5Path = status.mt5_path || 'UNKNOWN';
+      const dryRunEnabled = status.dry_run_enabled === true;
+      const dryRunText = dryRunEnabled ? 'DRY RUN' : 'LIVE';
+      const lastOrder = status.last_order_send_result;
+      const lastOrderErr = status.last_order_send_error;
+      let lastOrderText = 'none';
+      if (lastOrder && lastOrder.retcode != null) {
+        const cmt = lastOrder.comment ? `/${lastOrder.comment}` : '';
+        lastOrderText = `retcode=${lastOrder.retcode}${cmt}`;
+      } else if (lastOrderErr) {
+        lastOrderText = `error=${lastOrderErr}`;
+      }
+      if (mt5DetailsEl) {
+        mt5DetailsEl.textContent = `MT5: ${mt5ConnText} | trade_allowed=${mt5TradeText} | ${dryRunText} | last_order=${lastOrderText} | path=${mt5Path}`;
+      }
+
+      const snapshotStatus = (live.account_snapshot_status || status.account_snapshot_status || 'missing').toLowerCase();
+      const snapshotAge = live.account_snapshot_age_sec ?? status.account_snapshot_age_sec;
+      const snapshotReason = live.account_snapshot_reason || status.account_snapshot_reason || '';
+      const snapshotOk = snapshotStatus === 'ok';
+      const balanceText = snapshotOk && typeof live.account_balance === 'number' ? live.account_balance.toFixed(2) : 'UNKNOWN';
+      const equityText = snapshotOk && typeof live.account_equity === 'number' ? live.account_equity.toFixed(2) : 'UNKNOWN';
+      if (balanceEl) balanceEl.textContent = balanceText;
+      if (equityEl) equityEl.textContent = equityText;
+      const snapshotAgeEl = document.getElementById('account-snapshot-age');
+      if (snapshotAgeEl) {
+        if (snapshotOk) {
+          snapshotAgeEl.textContent = `Updated ${formatAge(snapshotAge)} ago`;
+        } else if (snapshotStatus === 'stale') {
+          snapshotAgeEl.textContent = `UNKNOWN (stale ${formatAge(snapshotAge)})`;
+        } else {
+          snapshotAgeEl.textContent = `UNKNOWN (${snapshotReason || snapshotStatus})`;
+        }
+      }
       const statusEl = document.getElementById('system-status');
       const dot = document.getElementById('system-dot');
       if (statusEl) statusEl.textContent = status.running ? 'ONLINE' : 'OFFLINE';
@@ -583,9 +816,59 @@
       setBadge(document.getElementById('mode-badge'), `Game Mode: ${status.mode || '?'}`, !!status.mode);
       setBadge(document.getElementById('portfolio-badge'), `Lineup: ${status.portfolio || '?'}`, !!status.portfolio);
       setBadge(document.getElementById('runner-badge'), `Runner: ${status.running ? 'RUNNING' : 'STOPPED'}`, status.running);
-      const mt5Env = status.mt5_env_present || {};
-      const mt5Ok = mt5Env.login && mt5Env.password && mt5Env.server;
-      setBadge(document.getElementById('mt5-env-badge'), `MT5 env: ${mt5Ok ? 'present' : 'missing'}`, mt5Ok);
+      const botBadge = document.getElementById('bot-badge');
+      const lockStatus = (status.identity_lock_status || identity.lock_status || 'unknown').toLowerCase();
+      const lockReason = status.identity_lock_reason || identity.lock_reason || identityReason || '';
+      const botStatusEffective = (status.bot_status_effective || status.bot_status || '').toUpperCase() || (status.running ? 'ARMED' : 'DOWN');
+      const tradingAllowed = status.trading_allowed === true;
+      let botStatus = botStatusEffective;
+      if (botStatusEffective === 'DOWN') {
+        botStatus = 'DOWN';
+      } else if (dryRunEnabled) {
+        botStatus = 'DISARMED';
+      } else if (lockStatus !== 'ok') {
+        botStatus = 'LOCKED';
+      } else if (botStatus === 'ARMED' && !tradingAllowed) {
+        botStatus = 'DISARMED';
+      }
+      let botBadgeState = 'warn';
+      if (botStatus === 'ARMED') botBadgeState = 'ok';
+      else if (botStatus === 'LOCKED' || botStatus === 'DOWN') botBadgeState = 'err';
+      if (botBadge) setBadge(botBadge, `BOT: ${botStatus}`, botBadgeState);
+      const runnerMt5 = status.runner_mt5_status || 'UNKNOWN';
+      setBadge(document.getElementById('mt5-env-badge'), `Runner MT5: ${runnerMt5}`, runnerMt5 === 'CONNECTED');
+
+      const modeSelect = document.getElementById('mode-select');
+      const portfolioSelect = document.getElementById('portfolio-select');
+      const lockNote = document.getElementById('mode-lock-note');
+      const shouldLockSelectors = botStatus === 'ARMED';
+      if (modeSelect) {
+        if (status.mode && (shouldLockSelectors || status.running)) {
+          modeSelect.value = status.mode;
+        }
+        modeSelect.disabled = shouldLockSelectors;
+      }
+      if (portfolioSelect) {
+        if (status.portfolio && (shouldLockSelectors || status.running)) {
+          portfolioSelect.value = status.portfolio;
+        }
+        portfolioSelect.disabled = shouldLockSelectors;
+      }
+      if (lockNote) {
+        lockNote.style.display = shouldLockSelectors ? 'inline-flex' : 'none';
+        lockNote.textContent = 'locked while ARMED';
+      }
+      const evidenceTier = (status.evidence_tier || 'practice').toUpperCase();
+      const matchedCount = status.matched_to_mt5_tickets_count ?? 0;
+      const evidenceState = matchedCount > 0 ? 'ok' : 'err';
+      setBadge(document.getElementById('evidence-badge'), `Evidence: ${evidenceTier}`, evidenceState);
+      const aiBadge = document.getElementById('ai-badge');
+      if (aiBadge) {
+        const aiOk = !!status.ai_enabled;
+        const aiReason = status.ai_reason ? ` (${status.ai_reason})` : '';
+        const aiLabel = aiOk ? 'AI: enabled' : `AI: disabled${aiReason}`;
+        setBadge(aiBadge, aiLabel, aiOk);
+      }
       const hb = document.getElementById('heartbeat');
       if (hb) setBadge(hb, live.last_heartbeat_time ? `Heartbeat OK ${live.last_heartbeat_time}` : 'Heartbeat missing', !!live.last_heartbeat_time);
       const stop = document.getElementById('stop-reason');
@@ -596,9 +879,149 @@
         } else stop.style.display = 'none';
       }
 
+      const startBtn = document.getElementById('start-btn');
+      if (startBtn) {
+        const locked = lockStatus !== 'ok';
+        startBtn.disabled = locked;
+        startBtn.title = locked ? `Identity lock: ${lockStatus}` : 'Enable Bot';
+      }
+
+      const readinessEl = document.getElementById('simple-readiness');
+      if (readinessEl) {
+        const hbTime = live.last_heartbeat_time ?? status.last_heartbeat_time;
+        const hbAge = (typeof hbTime === 'number') ? (Date.now() / 1000 - hbTime) : null;
+        const hbOk = hbAge != null && hbAge <= 60;
+        const hbText = hbAge == null ? 'MISSING' : `${hbOk ? 'OK' : 'STALE'} (${formatAge(hbAge)} ago)`;
+        const balanceLine = snapshotOk
+          ? `${balanceText} / ${equityText} (updated ${formatAge(snapshotAge)} ago)`
+          : `UNKNOWN (${snapshotReason || snapshotStatus})`;
+        const tradeReady = status.trading_path_ready === true;
+        const tradeReason = status.trading_block_reason || status.bot_status_reason || '';
+        const tradeReadyText = tradeReady ? 'READY' : `NOT READY${tradeReason ? ` (${tradeReason})` : ''}`;
+        const tradeAllowedText = mt5TradeAllowed === true ? 'YES' : (mt5TradeAllowed === false ? 'NO' : 'UNKNOWN');
+        const dryRunLine = dryRunEnabled ? 'YES' : 'NO';
+        const noneCount = status.order_send_none_count ?? 0;
+        const logTotal = status.log_events_total ?? 0;
+        const matchedTotal = status.matched_to_mt5_tickets_count ?? 0;
+        const unmatchedTotal = status.unmatched_shadow_or_log_only_count ?? 0;
+        const mt5Closed = status.mt5_verified_closed_trades_count ?? 0;
+        const mt5Open = status.mt5_open_positions_count ?? 0;
+        const evidenceTierText = (status.evidence_tier || 'practice').toUpperCase();
+        const lastOrderLine = lastOrderText + (noneCount ? ` | none_count=${noneCount}` : '');
+        const mt5TruthStatus = (status.mt5_truth_status || 'unknown').toLowerCase();
+        const mt5TruthReason = status.mt5_truth_reason || status.account_snapshot_reason || status.account_snapshot_status || 'unknown';
+        const mt5PositionsCount = status.mt5_positions_count;
+        const mt5PositionsProfit = status.mt5_positions_profit;
+        const mt5OrdersCount = status.mt5_orders_count;
+        const mt5Deals2h = status.mt5_deals_last_2h_count;
+        const mt5LastDeal = status.mt5_last_deal_time;
+        let mt5TruthLines = '';
+        if (mt5TruthStatus === 'ok') {
+          const posCountText = (mt5PositionsCount != null) ? mt5PositionsCount : 'UNKNOWN';
+          const posProfitText = (typeof mt5PositionsProfit === 'number') ? mt5PositionsProfit.toFixed(2) : 'UNKNOWN';
+          const ordersText = (mt5OrdersCount != null) ? mt5OrdersCount : 'UNKNOWN';
+          const dealsText = (mt5Deals2h != null) ? mt5Deals2h : 'UNKNOWN';
+          const lastDealText = mt5LastDeal || 'UNKNOWN';
+          mt5TruthLines = `
+            <div class="readiness-item">MT5 Truth: <strong>Positions=${posCountText} (PnL ${posProfitText})</strong></div>
+            <div class="readiness-item">MT5 Truth: <strong>Orders=${ordersText}</strong></div>
+            <div class="readiness-item">MT5 Deals (last 2h): <strong>${dealsText} | Last=${lastDealText}</strong></div>
+          `;
+        } else {
+          const reason = mt5TruthReason || mt5TruthStatus;
+          mt5TruthLines = `
+            <div class="readiness-item">MT5 Truth: <strong>UNKNOWN (${reason})</strong></div>
+            <div class="readiness-item">MT5 Truth: <strong>Positions=UNKNOWN | Orders=UNKNOWN</strong></div>
+            <div class="readiness-item">MT5 Deals (last 2h): <strong>UNKNOWN | Last=UNKNOWN</strong></div>
+          `;
+        }
+        const tickStatus = (status.mt5_tick_status || 'unknown').toLowerCase();
+        const tickReason = status.mt5_tick_reason || status.account_snapshot_reason || status.account_snapshot_status || 'unknown';
+        const tickAgeMap = status.mt5_tick_age_sec_by_symbol || {};
+        const tickTimeMap = status.mt5_tick_time_by_symbol || {};
+        const tickMissing = status.mt5_tick_missing_symbols || [];
+        const tickStaleSec = status.mt5_tick_stale_seconds || 300;
+        const tickSymbolsSet = new Set([...Object.keys(tickAgeMap), ...tickMissing]);
+        const defaultTickSymbols = status.portfolio === 'multi' ? ['USDJPY', 'GBPJPY'] : ['USDJPY'];
+        const tickSymbols = tickSymbolsSet.size ? Array.from(tickSymbolsSet).sort() : defaultTickSymbols;
+        let tickLines = '';
+        const staleSymbols = [];
+        const freshSymbols = [];
+        tickSymbols.forEach((sym) => {
+          const ageVal = tickAgeMap[sym];
+          const lastTick = tickTimeMap[sym] || 'UNKNOWN';
+          if (typeof ageVal === 'number') {
+            const ageText = formatTickAge(ageVal);
+            const isStale = ageVal > tickStaleSec;
+            const stateText = isStale ? 'STALE' : 'OK';
+            tickLines += `<div class="readiness-item">Market Data: <strong>${sym} tick age: ${ageText} (${stateText}) | last: ${lastTick}</strong></div>`;
+            if (isStale) staleSymbols.push(sym);
+            else freshSymbols.push(sym);
+          } else {
+            const why = tickStatus !== 'ok' ? ` (${tickReason})` : '';
+            tickLines += `<div class="readiness-item">Market Data: <strong>${sym} tick age: UNKNOWN${why} | last: ${lastTick}</strong></div>`;
+          }
+        });
+        if (tickSymbols.length && staleSymbols.length > 0 && freshSymbols.length === 0) {
+          tickLines += '<div class="readiness-item">Market Data: <strong>No activity expected (market closed / stale quotes)</strong></div>';
+        }
+        readinessEl.innerHTML = `
+          <div class="readiness-item">Identity: <strong>${buildIdentityLabel(identity, identityStatus, identityReason)}</strong></div>
+          <div class="readiness-item">Runner: <strong>${status.running ? 'RUNNING' : 'STOPPED'}</strong></div>
+          <div class="readiness-item">Heartbeat: <strong>${hbText}</strong></div>
+          <div class="readiness-item">Runner MT5: <strong>${runnerMt5}</strong></div>
+          <div class="readiness-item">Trade Allowed: <strong>${tradeAllowedText}</strong></div>
+          <div class="readiness-item">Dry Run: <strong>${dryRunLine}</strong></div>
+          <div class="readiness-item">Trading Path: <strong>${tradeReadyText}</strong></div>
+          <div class="readiness-item">Balance/Equity: <strong>${balanceLine}</strong></div>
+          ${tickLines}
+          ${mt5TruthLines}
+          <div class="readiness-item">Evidence Tier: <strong>${evidenceTierText}</strong></div>
+          <div class="readiness-item">MT5 Trades: <strong>closed=${mt5Closed} open=${mt5Open}</strong></div>
+          <div class="readiness-item">Log Events: <strong>total=${logTotal} matched=${matchedTotal} unmatched=${unmatchedTotal}</strong></div>
+          <div class="readiness-item">Last Order: <strong>${lastOrderLine}</strong></div>
+        `;
+      }
+
+      const activityEl = document.getElementById('simple-activity-stats');
+      if (activityEl) {
+        const tradesToday = live.trades_today ?? status.metrics?.trades_today ?? 0;
+        const pnlToday = live.pnl_today_pct ?? status.metrics?.pnl_today_pct;
+        const pnlText = (typeof pnlToday === 'number') ? `${pnlToday.toFixed(4)}%` : '0%';
+        const lastTrade = live.last_trade_time || status.metrics?.last_trade_time || '-';
+        activityEl.innerHTML = `
+          <div class="readiness-item">Trades Today: <strong>${tradesToday}</strong></div>
+          <div class="readiness-item">PnL Today: <strong>${pnlText}</strong></div>
+          <div class="readiness-item">Last Trade Time: <strong>${lastTrade}</strong></div>
+        `;
+      }
+
       // coach summary
       const coach = document.getElementById('coach-summary');
       if (coach) coach.innerHTML = renderCoachSummary(status, live);
+
+      const banner = document.getElementById('bot-status-banner');
+      if (banner) {
+        if (botStatus === 'DOWN') {
+          banner.className = 'bot-banner err';
+          banner.textContent = `BOT: DOWN - ${status.bot_status_reason || 'runner offline'}`;
+        } else if (dryRunEnabled) {
+          banner.className = 'bot-banner warn';
+          banner.textContent = 'SIMULATION MODE - NO ORDERS SENT';
+        } else if (lockStatus === 'mismatch') {
+          banner.className = 'bot-banner err';
+          banner.textContent = `BOT: LOCKED - ${buildMismatchText(identity)}`;
+        } else if (lockStatus !== 'ok') {
+          banner.className = 'bot-banner warn';
+          banner.textContent = `BOT: LOCKED - ${lockReason || lockStatus}`;
+        } else {
+          let cls = 'warn';
+          if (botStatus === 'ARMED') cls = 'ok';
+          else if (botStatus === 'DOWN') cls = 'err';
+          banner.className = `bot-banner ${cls}`;
+          banner.textContent = `BOT: ${botStatus}`;
+        }
+      }
 
       // gauges
       setGauge('dd-gauge', live.max_dd_today_pct || 0, 10);
@@ -611,7 +1034,12 @@
       document.getElementById('latest-trades-simple').innerHTML = renderLatestTrades(recent);
       const adv = document.getElementById('latest-trades-adv');
       if (adv) adv.innerHTML = renderLatestTrades(recent);
-      updateChart(recent);
+      updateChart(recent, live);
+      if (status && status.running) {
+        document.body.classList.add('live-active');
+      } else {
+        document.body.classList.remove('live-active');
+      }
 
       try {
         const cmp = await fetchJson('/comparison');
@@ -636,7 +1064,9 @@
     }
 
     refreshAll();
+    refreshRiskBrief();
     setInterval(refreshAll, 7000);
+    setInterval(refreshRiskBrief, 60000);
     window.addEventListener('resize', () => updateChart(lastTrades));
 
     async function askAi() {

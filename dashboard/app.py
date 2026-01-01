@@ -33,17 +33,100 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 STATE_FILE = LOG_DIR / "state.json"
 COMMAND_FILE = LOG_DIR / "runner_command.json"
 POLICY_FILE = LOG_DIR / "policy.json"
+IDENTITY_FILE = LOG_DIR / "identity.json"
+ACCOUNT_SNAPSHOT_FILE = LOG_DIR / "account_snapshot.json"
+POLICY_FILE = LOG_DIR / "policy.json"
+IDENTITY_STALE_SECONDS = int(os.getenv("OMEGAFX_IDENTITY_STALE_SECONDS", "300"))
+ACCOUNT_SNAPSHOT_STALE_SECONDS = int(os.getenv("OMEGAFX_ACCOUNT_SNAPSHOT_STALE_SECONDS", "30"))
+POLICY_STALE_SECONDS = int(os.getenv("OMEGAFX_POLICY_STALE_SECONDS", "300"))
+WATCHDOG_ENABLED = os.getenv("OMEGAFX_WATCHDOG", "").lower() in {"1", "true", "yes"}
+WATCHDOG_STALE_SECONDS = int(os.getenv("OMEGAFX_WATCHDOG_STALE_SECONDS", "60"))
+WATCHDOG_POLL_SECONDS = int(os.getenv("OMEGAFX_WATCHDOG_POLL_SECONDS", "10"))
 
 app = Flask(__name__)
 
 
+def _read_json_file(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _age_seconds(ts_value: Optional[str], path: Path) -> Optional[float]:
+    if ts_value:
+        try:
+            stamp = ts_value.rstrip("Z")
+            dt = datetime.fromisoformat(stamp)
+            return (datetime.utcnow() - dt).total_seconds()
+        except Exception:
+            pass
+    try:
+        return time.time() - path.stat().st_mtime
+    except Exception:
+        return None
+
+
+def _read_identity():
+    data = _read_json_file(IDENTITY_FILE)
+    if not data:
+        return {}, "missing", None, "identity.json missing"
+    age = _age_seconds(data.get("timestamp_utc"), IDENTITY_FILE)
+    if age is not None and age > IDENTITY_STALE_SECONDS:
+        return data, "stale", age, f"identity stale ({int(age)}s)"
+    return data, "ok", age, None
+
+
+def _read_account_snapshot():
+    data = _read_json_file(ACCOUNT_SNAPSHOT_FILE)
+    if not data:
+        return {}, "missing", None, "account_snapshot.json missing"
+    age = _age_seconds(data.get("timestamp_utc"), ACCOUNT_SNAPSHOT_FILE)
+    if age is not None and age > ACCOUNT_SNAPSHOT_STALE_SECONDS:
+        return data, "stale", age, f"snapshot stale ({int(age)}s)"
+    if data.get("mt5_connected") is False:
+        return data, "disconnected", age, data.get("error") or "mt5_disconnected"
+    return data, "ok", age, None
+
+
+def _read_policy():
+    data = _read_json_file(POLICY_FILE)
+    if not data:
+        return {}, "missing", None, "policy.json missing"
+    age = _age_seconds(data.get("timestamp_utc"), POLICY_FILE)
+    if age is not None and age > POLICY_STALE_SECONDS:
+        return data, "stale", age, f"policy stale ({int(age)}s)"
+    return data, "ok", age, None
+
+CREDS_SOURCE = "missing"
+
+
 def _read_local_creds():
+    global CREDS_SOURCE
     account_id = os.getenv("ACCOUNT_ID") or os.getenv("OMEGAFX_ACCOUNT_ID")
+    allow_fallback = os.getenv("OMEGAFX_ALLOW_LOCAL_CREDS_FALLBACK", "").lower() in {"1", "true", "yes"}
     candidates = []
     if account_id:
-        candidates.append(ROOT / f"mt5_creds.{account_id}.local.bat")
-    candidates.append(ROOT / "mt5_creds.local.bat")
-    for path in candidates:
+        candidates.append((ROOT / f"mt5_creds.{account_id}.local.bat", f"{account_id}.local"))
+        if allow_fallback:
+            candidates.append((ROOT / "mt5_creds.local.bat", "local_fallback"))
+    else:
+        candidates.append((ROOT / "mt5_creds.local.bat", "local_fallback"))
+    def _valid(val: Optional[str]) -> bool:
+        if not val:
+            return False
+        upper = val.strip().upper()
+        if "YOUR_" in upper or upper in {"YOURLOGIN", "YOURPASSWORD", "YOUR_PASS"}:
+            return False
+        return True
+    def _has_valid_creds(creds: dict) -> bool:
+        login = creds.get("OMEGAFX_MT5_LOGIN") or creds.get("MT5_LOGIN")
+        password = creds.get("OMEGAFX_MT5_PASSWORD") or creds.get("MT5_PASSWORD")
+        server = creds.get("OMEGAFX_MT5_SERVER") or creds.get("MT5_SERVER")
+        return _valid(login) and _valid(password) and _valid(server)
+    for path, source in candidates:
         if not path.exists():
             continue
         creds = {}
@@ -61,13 +144,19 @@ def _read_local_creds():
             line = line.strip()
             if not line.lower().startswith("set "):
                 continue
-            _, rest = line.split(" ", 1)
+            rest = line[4:].strip()
+            if rest.startswith(("\"", "'")) and rest.endswith(("\"", "'")) and len(rest) > 1:
+                rest = rest[1:-1]
             if "=" not in rest:
                 continue
             key, val = rest.split("=", 1)
-            creds[key.strip()] = val.strip().strip('"').strip("'")
-        if creds:
+            key = key.strip().strip('"').strip("'")
+            val = val.strip().strip('"').strip("'")
+            creds[key] = val
+        if creds and _has_valid_creds(creds):
+            CREDS_SOURCE = source
             return creds
+    CREDS_SOURCE = "missing"
     return {}
 
 
@@ -84,11 +173,9 @@ def _inject_local_creds():
         if _should_override(os.getenv(key)):
             os.environ[key] = val
 
-# Load local creds early so subprocess env inherits them.
-_inject_local_creds()
+# Note: dashboard should not load MT5 creds; runner owns MT5 connectivity.
 
 def _mt5_env_values():
-    _inject_local_creds()
     def _clean(val: Optional[str]) -> Optional[str]:
         if val is None:
             return None
@@ -96,23 +183,7 @@ def _mt5_env_values():
     login = _clean(os.getenv("OMEGAFX_MT5_LOGIN") or os.getenv("MT5_LOGIN"))
     pw = _clean(os.getenv("OMEGAFX_MT5_PASSWORD") or os.getenv("MT5_PASSWORD"))
     srv = _clean(os.getenv("OMEGAFX_MT5_SERVER") or os.getenv("MT5_SERVER"))
-    if not all([login, pw, srv]):
-        local = _read_local_creds()
-        login = login or _clean(local.get("OMEGAFX_MT5_LOGIN") or local.get("MT5_LOGIN"))
-        pw = pw or _clean(local.get("OMEGAFX_MT5_PASSWORD") or local.get("MT5_PASSWORD"))
-        srv = srv or _clean(local.get("OMEGAFX_MT5_SERVER") or local.get("MT5_SERVER"))
-    def _valid(v: str | None) -> bool:
-        if not v:
-            return False
-        upper = v.strip().upper()
-        if "YOUR_" in upper or upper in {"YOURLOGIN", "YOURPASSWORD", "YOUR_PASS"}:
-            return False
-        return True
-    return (
-        login if _valid(login) else None,
-        pw if _valid(pw) else None,
-        srv if _valid(srv) else None,
-    )
+    return login, pw, srv
 
 
 # helper for MT5 credential status
@@ -215,201 +286,53 @@ current_portfolio: Optional[str] = None
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY) if (OpenAI and OPENAI_API_KEY) else None
 
+def _ai_status():
+    if OpenAI is None:
+        return False, "openai package not installed"
+    if not OPENAI_API_KEY:
+        return False, "OPENAI_API_KEY missing"
+    return True, "ok"
+
 # Full AI system prompt
 AI_SYSTEM_PROMPT = """
-You are OmegaFX AI Co-Pilot — a hybrid of:
+You are OmegaFX AI Co-Pilot.
+Roles: NBA-style announcer, prop trading assistant, quant analyst, risk manager, research coordinator, productivity coach.
 
-• NBA game announcer
-• Professional prop trading assistant
-• Quant performance analyst
-• Risk manager
-• Research coordinator
-• Productivity coach
-
-Your top priority is helping the Coach (user) build and operate a trading system that:
-
-1. Passes prop firm challenges in under a week (per challenge)
-2. Scales to $10,000/month and beyond
-3. Runs safely within FTMO rules at all times
-4. Evolves into a stable, multi-lineup quant engine with:
-   • Multiple symbols
-   • Multiple edges that provide real statistical lift
-   • RL-style risk optimization
-   • Multi-regime behavior
-   • An auto meta-strategy layer
-   • Higher risk:reward and cleaner trade distribution
-
-================================
-CORE MISSIONS
-================================
-
-🎙️ 1. ANNOUNCER / NARRATOR (NBA STYLE)
-When new trades appear in the data (from /ai_context → recent_trades):
-
-• Announce trades using player names (Curry, Klay, KD, VanVleet, Big Man, Kawhi, Westbrook)
-• Describe what type of edge fired (breakout, trend follow, pullback, range, reversal)
-• Mention symbol, direction, and rough R:R idea (tight SL, wide TP, etc.)
-• Comment on streaks, momentum, and regime shifts (trend vs chop vs range)
-
-Tone here can be fun and energetic, but never reckless.
-
-🧠 2. REAL-TIME PERFORMANCE ANALYST
-Use data from /ai_context (live_metrics, recent_trades, team_stats, optimizer_results) to:
-
-• Detect losing streaks and state if they are statistically EXPECTED or CONCERNING
-• Compare live performance vs FTMO pipeline expectations:
-  – DD vs expected DD
-  – winrate vs expected winrate
-  – streak lengths vs expected streak lengths
-  – R:R vs simulated R:R
-• Identify which symbol and which player (edge) is carrying or dragging results
-• Highlight variance vs structural issues:
-  – “This is normal variance. Do nothing.”
-  – “This is outside expected behavior. Investigate or pause.”
-
-🏆 3. SCALING & PROP-FIRM STRATEGIST
-Using FTMO pipeline JSONs and live performance, you:
-
-• Decide when a lineup is ready for:
-  – Shadow
-  – Demo
-  – FTMO Challenge
-• Help plan account rotations:
-  – FTMO #1: Curry
-  – FTMO #2: Splash Bros
-  – FTMO #3: Death Lineup (EXP_V2)
-  – FTMO #4: Dynasty (EXP_V3, once ready)
-• Think in terms of:
-  – Multi-symbol setups
-  – Multiple edges that provide statistical lift vs baseline
-  – Diversification across prop firms
-• Always tie recommendations to the $10k/month scaling goal:
-  – How many accounts
-  – With which lineups
-  – At what risk levels
-
-🔬 4. DYNASTY R&D SUPERVISOR (MULTI-EDGE, MULTI-SYMBOL, MULTI-REGIME)
-Use optimizer_results and team_stats to:
-
-• Evaluate whether adding a new symbol or edge truly provides statistical lift:
-  – Higher pass rate
-  – Better R:R
-  – Lower DD per unit of return
-• Think in multi-regime terms:
-  – Which players should be active in trend vs range vs chop vs high-vol vs low-vol
-• Suggest structured experiments:
-  – “Test Splash Bros on an additional symbol with tiny risk.”
-  – “Run fastwindows for EXP_V2 / EXP_V3 in high-vol regimes only.”
-• Steer the research roadmap toward:
-  – Multiple independent symbols
-  – Multiple robust edges, not overfit niches
-  – Clear separation of roles (who plays which regime)
-
-🎛️ 5. RL-STYLE RISK OPTIMIZATION ADVISOR
-You do NOT code an RL system directly, but you help design and interpret RL-style or adaptive risk behavior.
-
-Your job here is to:
-
-• Think of risk as a policy that adapts to:
-  – DD state
-  – volatility regime
-  – performance streaks
-  – edge confidence
-• Encourage:
-  – Reducing risk after drawdown or poor regime
-  – Letting risk slowly increase in favorable stretches (within FTMO rules)
-• Suggest RL-like experiment designs:
-  – “If DD < 1% and winrate > expected, slightly scale risk.”
-  – “If DD > 3% or losing streak too long, cut risk or timeout.”
-
-You always keep FTMO limits and capital protection as non-negotiable constraints.
-
-📈 6. HIGHER R:R COACH
-You constantly look for ways to improve risk:reward:
-
-• Call out if average loss is too large vs average win
-• Suggest setups or parameter tweaks that bias toward:
-  – fewer, higher-quality trades
-  – cleaner 2R+ outcomes
-• Point out when edges are churning (many tiny scratches, no meaningful R:R)
-
-You NEVER suggest “more trades just to feel busy.”
-
-🧭 7. PRODUCTIVITY & ACCOUNTABILITY COACH
-You help the Coach stay on the high-priority path:
-
-• Encourage:
-  – Running Demo/Shadow long enough to collect meaningful data
-  – Not tweaking configs mid-session
-  – Prioritizing the next most impactful task
-• Remind them of:
-  – The $10k/month target
-  – The current ladder (Curry → Splash → Death → Dynasty)
-  – The need for multiple symbols and multiple edges with proven lift
-
-================================
-DATA YOU CAN USE
-================================
-
-From /ai_context you may be given:
-
-• status: mode, lineup, runner_state, heartbeat freshness
-• live_metrics: PnL today, DD today, trades, wins, losses, symbols, start vs current equity, losing streak metrics
-• recent_trades: last N trades with symbol, player, side, PnL, equity
-• team_stats: pass rates, DD, time-to-payout for Curry/Splash/Death/Dynasty
-• optimizer_results: KD primary, EXP_V2, EXP_V3, top configs
-• events: heartbeat_stale, losing_streak, dd_alert, regime_tagged, etc.
-
-Base your explanations and suggestions ONLY on the data passed in. If something is unknown, say what you would need to see.
-
-================================
-ANSWER STYLE
-================================
-
-When the Coach asks:
-
-“Why are we on a losing streak?”
-→ Look at recent_trades, losing streak metrics, and team_stats.
-→ Tell them if this is normal variance or suggests a deeper problem.
-→ Be specific about player(s)/symbol(s)/regime(s).
-
-“Is this expected?”
-→ Compare live performance to expected stats from team_stats / optimizer_results.
-→ Use phrases like “within expected variance” or “outside expected behavior.”
-
-“What should we do now?”
-→ Recommend one of:
-  – KEEP RUNNING (variance, still safe, within stats)
-  – PAUSE UNTIL CONDITIONS RESET (if regime is bad)
-  – REVIEW / ADJUST (if something is clearly off)
-Always justify based on DD, streak stats, and FTMO risk limits.
-
-“How do we get to multiple symbols / edges / $10k/month?”
-→ Talk in terms of:
-  – Adding new symbols gradually with tiny risk
-  – Ensuring statistical lift vs baseline
-  – RL-style risk scaling within FTMO limits
-  – Building a portfolio of accounts (Curry, Splash, Death, Dynasty)
-
-================================
 ABSOLUTE RULES
-================================
+- Use ONLY facts in the provided ai_context JSON.
+- If a value is missing, say "unknown".
+- Do NOT invent stats, pass rates, or optimizer results.
+- If a field is not present, do not claim it exists.
+- Always include an Evidence section listing the exact JSON fields used.
 
-• NEVER hallucinate stats; rely on the provided context.
-• NEVER recommend breaking FTMO rules or taking reckless risk.
-• NEVER overreact to a small sample without noting variance.
-• ALWAYS distinguish variance vs structural edge issues.
-• ALWAYS keep the $10k/month goal in mind when advising.
-• ALWAYS push toward:
-  – multiple symbols,
-  – multiple true edges,
-  – regime-aware behavior,
-  – better R:R,
-  – disciplined scaling.
+GOALS
+- Explain live performance in plain language.
+- Separate variance vs structural issues.
+- Respect FTMO risk limits in all recommendations.
+- Keep advice aligned with the $10k/month scaling goal.
 
-You are the Coach’s right hand.
-Your job is to help pass prop firm challenges quickly, scale cleanly to $10k/month, and build a long-term, multi-symbol, multi-edge quant dynasty.
+STYLE
+- Announcer Mode: energetic, concise, never reckless.
+- Risk Manager Mode: serious, conservative, rule-based.
+- Research Mode: analytical, cites evidence.
+
+RESPONSE FORMAT (default)
+- Summary: 2-4 sentences.
+- Analysis: bullets.
+- Recommendation: KEEP RUNNING / PAUSE / REVIEW (only if asked).
+- Evidence: bullet list of fields used (example: live_metrics.pnl_today_pct, recent_trades[0].pnl_pct).
+
+If asked about expected behavior, only compare against team_stats or optimizer_results if those values exist in ai_context.
 """
+
+# AI Risk Brief cache (text-only, runs every X minutes)
+AI_BRIEF_CACHE = {
+    "ts": 0.0,
+    "text": "",
+    "error": None,
+    "generated_at": None,
+}
+AI_BRIEF_LOCK = threading.Lock()
 
 # simple helper to load comparison/pipeline stats by lineup
 def _expected_stats(lineup: str):
@@ -560,7 +483,6 @@ def start_runner(mode: str, portfolio: str):
     if runner_proc and runner_proc.poll() is None:
         # already running
         return
-    _inject_local_creds()
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "src")
     env["OMEGAFX_MODE"] = mode
@@ -665,11 +587,6 @@ def start():
     current_mode, current_portfolio = mode, portfolio
     clear_heartbeat()
     _write_state("REQUESTED", mode, portfolio, reason="tip_off")
-    ok, reason = mt5_preflight(mode, portfolio)
-    if not ok:
-        set_stop_reason(f"{reason or 'preflight_failed'} | mode={mode} | lineup={portfolio}")
-        _write_state("STOPPED", mode, portfolio, reason=reason or "preflight_failed")
-        return jsonify({"error": reason}), 400
     stop_runner("runner restarting")
     start_runner(mode, portfolio)
     return jsonify({"ok": True})
@@ -729,11 +646,7 @@ def status():
         # prefer heartbeat freshness; fall back to local proc state if available
         proc_alive = runner_proc is not None and runner_proc.poll() is None
         fresh_hb = hb_time is not None and now - hb_time < stale_window
-        running = False
-        if state_state in {"RUNNING", "COOLDOWN"} and fresh_hb:
-            running = True
-        elif runner_active and proc_alive and fresh_hb:
-            running = True
+        running = bool(fresh_hb)
 
         ls = read_stop_reason()
         parsed_mode, parsed_portfolio = _parse_stop_reason(ls or "")
@@ -749,8 +662,7 @@ def status():
         except Exception:
             stop_time = None
 
-        mode_val = current_mode or state_mode or runner_mode or hb_mode or last_mode or parsed_mode or "shadow"
-        port_val = current_portfolio or state_portfolio or runner_portfolio or hb_portfolio or last_portfolio or parsed_portfolio or "core"
+        mode_val, port_val = _current_mode_portfolio()
         if mode_val == "shadow" and ls and "MT5" in ls:
             ls = None
         if ls and "mode=" in ls and mode_val not in ls:
@@ -758,17 +670,109 @@ def status():
 
         # include minimal live metrics for convenience
         _, metrics = _read_trades_for_today()
-        login, pw, srv = _mt5_env_values()
-        mt5_env_present = {
-            "login": bool(login),
-            "password": bool(pw),
-            "server": bool(srv),
-        }
-        mt5_credentials_status = "ok" if all([login, pw, srv]) else "missing"
+        identity, identity_status, identity_age, identity_reason = _read_identity()
+        snapshot, snapshot_status, snapshot_age, snapshot_reason = _read_account_snapshot()
+        policy, policy_status, policy_age, policy_reason = _read_policy()
+        lock_status = snapshot.get("identity_lock_status") or identity.get("lock_status") or "unknown"
+        lock_status = str(lock_status).lower()
+        lock_reason = snapshot.get("identity_lock_reason") or identity.get("lock_reason") or identity_reason or snapshot_reason
+        mt5_connected = snapshot.get("mt5_connected") if snapshot else None
+        mt5_trade_allowed = snapshot.get("mt5_trade_allowed") if snapshot else None
+        mt5_truth_status = snapshot.get("mt5_truth_status")
+        mt5_truth_reason = snapshot.get("mt5_truth_reason")
+        mt5_tick_status = snapshot.get("mt5_tick_status")
+        mt5_tick_reason = snapshot.get("mt5_tick_reason")
+        if snapshot_status != "ok":
+            if not mt5_truth_status:
+                mt5_truth_status = "unknown"
+            if not mt5_truth_reason:
+                mt5_truth_reason = snapshot_reason or snapshot_status
+            if not mt5_tick_status:
+                mt5_tick_status = "unknown"
+            if not mt5_tick_reason:
+                mt5_tick_reason = snapshot_reason or snapshot_status
+        elif not mt5_truth_status:
+            mt5_truth_status = "unknown"
+            mt5_truth_reason = "mt5_truth_missing"
+        if snapshot_status == "ok" and not mt5_tick_status:
+            mt5_tick_status = "unknown"
+            mt5_tick_reason = "mt5_tick_missing"
+        dry_run_enabled = snapshot.get("dry_run_enabled") if snapshot else None
+        trading_block_reason = snapshot.get("trading_block_reason") if snapshot else None
+        if snapshot_status == "ok":
+            runner_mt5_status = "CONNECTED" if mt5_connected else "DISCONNECTED"
+            runner_mt5_reason = snapshot_reason
+        elif snapshot_status == "disconnected":
+            runner_mt5_status = "DISCONNECTED"
+            runner_mt5_reason = snapshot_reason
+        else:
+            runner_mt5_status = "UNKNOWN"
+            runner_mt5_reason = snapshot_reason
 
+        ai_enabled, ai_reason = _ai_status()
+        if not fresh_hb:
+            raw_bot_status = "DOWN"
+        elif state_state == "RUNNING":
+            raw_bot_status = "ARMED"
+        else:
+            raw_bot_status = "DISARMED"
+        if not fresh_hb:
+            bot_status_effective = "DOWN"
+        else:
+            bot_status_effective = snapshot.get("bot_status_effective") or (
+                "LOCKED" if lock_status != "ok" else raw_bot_status
+            )
+        trading_allowed = False
+        if fresh_hb and snapshot_status == "ok":
+            if "trading_allowed" in snapshot:
+                trading_allowed = bool(snapshot.get("trading_allowed"))
+            else:
+                trading_allowed = bool(
+                    raw_bot_status == "ARMED" and lock_status == "ok" and mt5_connected is True
+                )
+        bot_status = bot_status_effective
+        if bot_status == "ARMED" and not trading_allowed:
+            bot_status = "DISARMED"
+        expected_login = identity.get("expected_login")
+        expected_server = identity.get("expected_server")
+        actual_login = identity.get("mt5_account_login")
+        actual_server = identity.get("mt5_account_server")
+        expected_ok = False
+        if expected_login or expected_server:
+            expected_ok = (
+                (not expected_login or str(expected_login) == str(actual_login))
+                and (not expected_server or expected_server == actual_server)
+            )
+        evidence_tier = snapshot.get("evidence_tier") or "practice"
+        trading_path_ready = bool(
+            (dry_run_enabled is False)
+            and mt5_connected is True
+            and mt5_trade_allowed is True
+            and expected_ok
+        )
+
+        if running:
+            runner_state = "RUNNING"
+        else:
+            runner_state = state_state or "STOPPED"
+        if not fresh_hb:
+            bot_status_reason = "heartbeat_stale"
+        elif lock_status != "ok":
+            bot_status_reason = lock_reason
+        elif dry_run_enabled is True:
+            bot_status_reason = "dry_run"
+        elif snapshot.get("risk_policy_ok") is False:
+            bot_status_reason = snapshot.get("risk_policy_reason") or policy_reason
+        elif trading_block_reason:
+            bot_status_reason = trading_block_reason
+        else:
+            bot_status_reason = ls
         return jsonify({
             "running": running,
-            "runner_state": state_state or ("RUNNING" if running else "STOPPED"),
+            "runner_state": runner_state,
+            "bot_status": bot_status,
+            "bot_status_effective": bot_status_effective,
+            "bot_status_reason": bot_status_reason,
             "mode": mode_val,
             "portfolio": port_val,
             "last_stop_reason": ls,
@@ -778,9 +782,62 @@ def status():
             "last_heartbeat_time": hb_time or last_heartbeat,
             "last_heartbeat_equity": hb_equity or last_heartbeat_equity,
             "metrics": metrics,
-            "mt5_credentials_status": mt5_credentials_status,
-            "mt5_login_required": mode_val in ["demo", "ftmo"],
-            "mt5_env_present": mt5_env_present,
+            "identity": identity,
+            "identity_status": identity_status,
+            "identity_age_sec": identity_age,
+            "identity_reason": identity_reason,
+            "identity_lock_status": lock_status,
+            "identity_lock_reason": lock_reason,
+            "account_snapshot_status": snapshot_status,
+            "account_snapshot_age_sec": snapshot_age,
+            "account_snapshot_reason": snapshot_reason,
+            "balance": snapshot.get("balance"),
+            "equity": snapshot.get("equity"),
+            "mt5_connected": mt5_connected,
+            "mt5_trade_allowed": mt5_trade_allowed,
+            "mt5_terminal_trade_allowed": snapshot.get("mt5_terminal_trade_allowed"),
+            "mt5_account_trade_allowed": snapshot.get("mt5_account_trade_allowed"),
+            "mt5_path": snapshot.get("mt5_path"),
+            "dry_run_enabled": dry_run_enabled,
+            "last_order_send_result": snapshot.get("last_order_send_result"),
+            "last_order_send_error": snapshot.get("last_order_send_error"),
+            "order_send_none_count": snapshot.get("order_send_none_count"),
+            "mt5_verified_closed_trades_count": snapshot.get("mt5_verified_closed_trades_count"),
+            "mt5_open_positions_count": snapshot.get("mt5_open_positions_count"),
+            "log_events_total": snapshot.get("log_events_total"),
+            "matched_to_mt5_tickets_count": snapshot.get("matched_to_mt5_tickets_count"),
+            "unmatched_shadow_or_log_only_count": snapshot.get("unmatched_shadow_or_log_only_count"),
+            "evidence_tier": evidence_tier,
+            "mt5_account_login": identity.get("mt5_account_login"),
+            "mt5_account_server": identity.get("mt5_account_server"),
+            "mt5_company": identity.get("mt5_company") or identity.get("mt5_terminal_company"),
+            "mt5_truth_status": mt5_truth_status,
+            "mt5_truth_reason": mt5_truth_reason,
+            "mt5_positions_count": snapshot.get("mt5_positions_count"),
+            "mt5_positions_profit": snapshot.get("mt5_positions_profit"),
+            "mt5_orders_count": snapshot.get("mt5_orders_count"),
+            "mt5_deals_last_2h_count": snapshot.get("mt5_deals_last_2h_count"),
+            "mt5_last_deal_time": snapshot.get("mt5_last_deal_time"),
+            "mt5_tick_status": mt5_tick_status,
+            "mt5_tick_reason": mt5_tick_reason,
+            "mt5_tick_age_sec_by_symbol": snapshot.get("mt5_tick_age_sec_by_symbol"),
+            "mt5_tick_time_by_symbol": snapshot.get("mt5_tick_time_by_symbol"),
+            "mt5_tick_missing_symbols": snapshot.get("mt5_tick_missing_symbols"),
+            "mt5_tick_stale_seconds": snapshot.get("mt5_tick_stale_seconds"),
+            "trading_allowed": trading_allowed,
+            "trading_path_ready": trading_path_ready,
+            "trading_block_reason": trading_block_reason,
+            "risk_policy": policy,
+            "risk_policy_status": policy_status,
+            "risk_policy_age_sec": policy_age,
+            "risk_policy_reason": policy_reason,
+            "risk_policy_ok": snapshot.get("risk_policy_ok"),
+            "risk_policy_state": snapshot.get("risk_policy"),
+            "risk_policy_state_reason": snapshot.get("risk_policy_reason"),
+            "runner_mt5_status": runner_mt5_status,
+            "runner_mt5_reason": runner_mt5_reason,
+            "ai_enabled": ai_enabled,
+            "ai_reason": ai_reason,
         })
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
@@ -807,28 +864,37 @@ def diag():
             stop_time = None
         trade_path = _trade_log_path()
         equity_path = _equity_log_path()
-        login, pw, srv = _mt5_env_values()
-        mt5_env_present = {
-            "login": bool(login),
-            "password": bool(pw),
-            "server": bool(srv),
-        }
-        mt5_credentials_status = "ok" if all([login, pw, srv]) else "missing"
+        identity, identity_status, identity_age, identity_reason = _read_identity()
+        snapshot, snapshot_status, snapshot_age, snapshot_reason = _read_account_snapshot()
+        policy, policy_status, policy_age, policy_reason = _read_policy()
+        ai_enabled, ai_reason = _ai_status()
         dynamic_risk_enabled = os.getenv("DYNAMIC_RISK", "0").lower() in {"1", "true", "yes"}
-        policy = {}
-        if POLICY_FILE.exists():
-            try:
-                policy = json.loads(POLICY_FILE.read_text(encoding="utf-8"))
-            except Exception:
-                policy = {}
         closed_stats = _closed_trade_stats()
         account_id = os.getenv("ACCOUNT_ID") or os.getenv("OMEGAFX_ACCOUNT_ID")
         dash_port = os.getenv("DASH_PORT") or os.getenv("OMEGAFX_DASH_PORT") or "5000"
         mt5_path = os.getenv("MT5_PATH") or os.getenv("OMEGAFX_MT5_PATH")
+        effective_mode, effective_portfolio = _current_mode_portfolio()
+        expected_login = identity.get("expected_login")
+        expected_server = identity.get("expected_server")
+        actual_login = identity.get("mt5_account_login")
+        actual_server = identity.get("mt5_account_server")
+        expected_ok = False
+        if expected_login or expected_server:
+            expected_ok = (
+                (not expected_login or str(expected_login) == str(actual_login))
+                and (not expected_server or expected_server == actual_server)
+            )
+        dry_run_enabled = snapshot.get("dry_run_enabled")
+        trading_path_ready = bool(
+            (dry_run_enabled is False)
+            and snapshot.get("mt5_connected") is True
+            and snapshot.get("mt5_trade_allowed") is True
+            and expected_ok
+        )
         return jsonify({
             "state": state,
-            "current_mode": current_mode,
-            "current_portfolio": current_portfolio,
+            "current_mode": effective_mode,
+            "current_portfolio": effective_portfolio,
             "runner_mode": runner_mode,
             "runner_portfolio": runner_portfolio,
             "last_mode": last_mode,
@@ -852,10 +918,50 @@ def diag():
             },
             "last_stop_reason": read_stop_reason(),
             "last_stop_time": stop_time,
-            "mt5_env_present": mt5_env_present,
-            "mt5_credentials_status": mt5_credentials_status,
+            "identity": identity,
+            "identity_status": identity_status,
+            "identity_age_sec": identity_age,
+            "identity_reason": identity_reason,
+            "account_snapshot": snapshot,
+            "account_snapshot_status": snapshot_status,
+            "account_snapshot_age_sec": snapshot_age,
+            "account_snapshot_reason": snapshot_reason,
+            "mt5_connected": snapshot.get("mt5_connected"),
+            "mt5_trade_allowed": snapshot.get("mt5_trade_allowed"),
+            "mt5_terminal_trade_allowed": snapshot.get("mt5_terminal_trade_allowed"),
+            "mt5_account_trade_allowed": snapshot.get("mt5_account_trade_allowed"),
+            "mt5_path_used": snapshot.get("mt5_path"),
+            "mt5_truth_status": snapshot.get("mt5_truth_status"),
+            "mt5_truth_reason": snapshot.get("mt5_truth_reason"),
+            "mt5_positions_count": snapshot.get("mt5_positions_count"),
+            "mt5_positions_profit": snapshot.get("mt5_positions_profit"),
+            "mt5_orders_count": snapshot.get("mt5_orders_count"),
+            "mt5_deals_last_2h_count": snapshot.get("mt5_deals_last_2h_count"),
+            "mt5_last_deal_time": snapshot.get("mt5_last_deal_time"),
+            "mt5_tick_status": snapshot.get("mt5_tick_status"),
+            "mt5_tick_reason": snapshot.get("mt5_tick_reason"),
+            "mt5_tick_age_sec_by_symbol": snapshot.get("mt5_tick_age_sec_by_symbol"),
+            "mt5_tick_time_by_symbol": snapshot.get("mt5_tick_time_by_symbol"),
+            "mt5_tick_missing_symbols": snapshot.get("mt5_tick_missing_symbols"),
+            "mt5_tick_stale_seconds": snapshot.get("mt5_tick_stale_seconds"),
+            "dry_run_enabled": dry_run_enabled,
+            "last_order_send_result": snapshot.get("last_order_send_result"),
+            "last_order_send_error": snapshot.get("last_order_send_error"),
+            "order_send_none_count": snapshot.get("order_send_none_count"),
+            "mt5_verified_closed_trades_count": snapshot.get("mt5_verified_closed_trades_count"),
+            "mt5_open_positions_count": snapshot.get("mt5_open_positions_count"),
+            "log_events_total": snapshot.get("log_events_total"),
+            "matched_to_mt5_tickets_count": snapshot.get("matched_to_mt5_tickets_count"),
+            "unmatched_shadow_or_log_only_count": snapshot.get("unmatched_shadow_or_log_only_count"),
+            "evidence_tier": snapshot.get("evidence_tier") or "practice",
+            "trading_path_ready": trading_path_ready,
+            "ai_enabled": ai_enabled,
+            "ai_reason": ai_reason,
             "dynamic_risk_enabled": dynamic_risk_enabled,
             "policy": policy,
+            "policy_status": policy_status,
+            "policy_age_sec": policy_age,
+            "policy_read_reason": policy_reason,
             "policy_global_risk_scale": policy.get("global_risk_scale"),
             "policy_symbol_enabled": policy.get("symbol_enabled"),
             "policy_cooldown_until": policy.get("cooldown_until"),
@@ -1140,15 +1246,32 @@ def _current_mode_portfolio():
     state = _read_state() or {}
     state_mode = state.get("mode")
     state_portfolio = state.get("portfolio")
+    state_state = state.get("state")
     hb = read_heartbeat()
     hb_mode = hb["mode"] if hb else None
     hb_portfolio = hb["portfolio"] if hb else None
+    hb_time = hb["time"] if hb else None
+    heartbeat_interval = int(os.getenv("OMEGAFX_HEARTBEAT_SECONDS", "30"))
+    stale_window = heartbeat_interval * 4
+    hb_fresh = hb_time is not None and (time.time() - hb_time) < stale_window
     if hb_mode == "live":
         hb_mode = current_mode or runner_mode or last_mode or "demo"
     stop_text = read_stop_reason() or ""
     parsed_mode, parsed_portfolio = _parse_stop_reason(stop_text)
-    mode = current_mode or state_mode or runner_mode or hb_mode or last_mode or parsed_mode or "shadow"
-    portfolio = current_portfolio or state_portfolio or runner_portfolio or hb_portfolio or last_portfolio or parsed_portfolio or "core"
+    if current_mode or current_portfolio:
+        mode = current_mode or state_mode or hb_mode or runner_mode or last_mode or parsed_mode or "shadow"
+        portfolio = current_portfolio or state_portfolio or hb_portfolio or runner_portfolio or last_portfolio or parsed_portfolio or "core"
+        return mode, portfolio
+    if state_mode or state_portfolio:
+        mode = state_mode or hb_mode or runner_mode or last_mode or parsed_mode or "shadow"
+        portfolio = state_portfolio or hb_portfolio or runner_portfolio or last_portfolio or parsed_portfolio or "core"
+        return mode, portfolio
+    if hb_fresh:
+        mode = hb_mode or state_mode or runner_mode or last_mode or parsed_mode or "shadow"
+        portfolio = hb_portfolio or state_portfolio or runner_portfolio or last_portfolio or parsed_portfolio or "core"
+    else:
+        mode = state_mode or runner_mode or last_mode or parsed_mode or hb_mode or "shadow"
+        portfolio = state_portfolio or runner_portfolio or last_portfolio or parsed_portfolio or hb_portfolio or "core"
     return mode, portfolio
 
 
@@ -1198,8 +1321,6 @@ def _equity_log_path():
 
 def _read_trades_for_today():
     path = _trade_log_path()
-    if not path.exists():
-        return [], {}
     import csv
     from collections import deque
     today = time.strftime("%Y-%m-%d")
@@ -1246,6 +1367,8 @@ def _read_trades_for_today():
         "trades_by_symbol": {},
         "pnl_by_symbol": {},
     }
+    if not path.exists():
+        return rows, metrics
     if not rows:
         return rows, metrics
 
@@ -1320,6 +1443,43 @@ def _read_trades_for_today():
     return rows, metrics
 
 
+def _equity_stats_today() -> Dict[str, Optional[float]]:
+    path = _equity_log_path()
+    if not path.exists():
+        return {}
+    import csv
+    today = time.strftime("%Y-%m-%d")
+    equities: List[float] = []
+    try:
+        with open(path, newline="") as f:
+            reader = csv.DictReader(f)
+            for r in reader:
+                ts = r.get("time") or ""
+                if today not in ts:
+                    continue
+                raw = r.get("equity")
+                try:
+                    eq = float(raw) if raw not in (None, "", "None") else None
+                except Exception:
+                    eq = None
+                if eq is not None:
+                    equities.append(eq)
+    except Exception:
+        return {}
+    if not equities:
+        return {}
+    start_eq = equities[0]
+    end_eq = equities[-1]
+    min_eq = min(equities)
+    out = {
+        "start_equity_today": start_eq,
+        "end_equity_today": end_eq,
+        "pnl_today_pct": ((end_eq - start_eq) / start_eq) * 100.0 if start_eq else 0.0,
+        "max_dd_today_pct": ((min_eq - start_eq) / start_eq) * 100.0 if start_eq else 0.0,
+    }
+    return out
+
+
 def _closed_trade_stats():
     path = _trade_log_path()
     if not path.exists():
@@ -1370,13 +1530,6 @@ def _closed_trade_stats():
 
 @app.route("/recent_trades")
 def recent_trades():
-    if _use_mt5_metrics():
-        account, deals, err = _mt5_snapshot()
-        if account and deals:
-            account_balance = float(getattr(account, "balance", 0) or 0)
-            rows = _mt5_deals_to_trades(deals, account_balance)
-            if rows:
-                return jsonify(rows)
     path = _trade_log_path()
     if not path.exists():
         return jsonify([])
@@ -1386,7 +1539,7 @@ def recent_trades():
         from collections import deque
         with open(path, newline="") as f:
             reader = csv.DictReader(f)
-            dq = deque(reader, maxlen=50)
+            dq = deque(reader, maxlen=200)
         for r in dq:
             pnl_pct = r.get("pnl_pct")
             try:
@@ -1399,7 +1552,7 @@ def recent_trades():
             except Exception:
                 eq_after = None
             rows.append({
-                "timestamp": r.get("entry_time") or r.get("exit_time") or "",
+                "timestamp": r.get("close_time") or r.get("exit_time") or r.get("entry_time") or "",
                 "symbol": r.get("symbol") or "",
                 "strategy_id": r.get("profile_name") or "",
                 "strategy_name_friendly": _player_name(r.get("profile_name") or ""),
@@ -1427,61 +1580,27 @@ def recent_trades():
 @app.route("/live_metrics")
 def live_metrics():
     try:
-        if _use_mt5_metrics():
-            account, deals, err = _mt5_snapshot()
-            if account and deals is not None:
-                now = datetime.now()
-                today = now.date()
-                account_balance = float(getattr(account, "balance", 0) or 0)
-                account_equity = float(getattr(account, "equity", 0) or 0)
-                trades = []
-                for d in deals:
-                    t = datetime.fromtimestamp(d.time)
-                    if t.date() == today:
-                        trades.append(d)
-                pnl_today = sum(float(getattr(d, "profit", 0) or 0) for d in trades)
-                start_eq = account_balance - pnl_today if account_balance else account_balance
-                running_eq = start_eq
-                min_eq = start_eq
-                wins = 0
-                losses = 0
-                symbols = set()
-                last_trade_time = None
-                for d in sorted(trades, key=lambda x: x.time):
-                    profit = float(getattr(d, "profit", 0) or 0)
-                    running_eq += profit
-                    min_eq = min(min_eq, running_eq)
-                    if profit > 0:
-                        wins += 1
-                    elif profit < 0:
-                        losses += 1
-                    symbols.add(d.symbol)
-                    last_trade_time = datetime.fromtimestamp(d.time).strftime("%Y-%m-%d %H:%M:%S")
-                mode_val, port_val = _current_mode_portfolio()
-                metrics = {
-                    "trades_today": len(trades),
-                    "wins_today": wins,
-                    "losses_today": losses,
-                    "pnl_today_pct": ((pnl_today / start_eq) * 100.0) if start_eq else 0.0,
-                    "max_dd_today_pct": ((min_eq - start_eq) / start_eq * 100.0) if start_eq else 0.0,
-                    "symbols_today": sorted(symbols),
-                    "last_trade_time": last_trade_time,
-                    "start_equity_today": start_eq if start_eq is not None else 0.0,
-                    "end_equity_today": account_equity,
-                    "account_balance": account_balance,
-                    "account_equity": account_equity,
-                    "account_login": getattr(account, "login", None),
-                    "account_server": getattr(account, "server", None),
-                    "mode": mode_val,
-                    "lineup_name": port_val,
-                    "source": "mt5",
-                }
-            else:
-                _, metrics = _read_trades_for_today()
-                metrics["source"] = "logs"
+        rows, metrics = _read_trades_for_today()
+        eq_stats = _equity_stats_today()
+        if eq_stats:
+            for key, val in eq_stats.items():
+                if val is not None:
+                    metrics[key] = val
+
+        metrics["source"] = "logs"
+        snapshot, snapshot_status, snapshot_age, snapshot_reason = _read_account_snapshot()
+        identity, identity_status, identity_age, identity_reason = _read_identity()
+        if snapshot_status == "ok":
+            metrics["account_balance"] = snapshot.get("balance")
+            metrics["account_equity"] = snapshot.get("equity")
         else:
-            _, metrics = _read_trades_for_today()
-            metrics["source"] = "logs"
+            metrics["account_balance"] = None
+            metrics["account_equity"] = None
+        metrics["account_snapshot_status"] = snapshot_status
+        metrics["account_snapshot_age_sec"] = snapshot_age
+        metrics["account_snapshot_reason"] = snapshot_reason
+        metrics["account_login"] = identity.get("mt5_account_login")
+        metrics["account_server"] = identity.get("mt5_account_server")
         # enrich with heartbeat if available
         hb_path = LOG_DIR / "runner_heartbeat.txt"
         if hb_path.exists():
@@ -1497,6 +1616,9 @@ def live_metrics():
                         metrics["last_heartbeat_mode"] = parts[3]
             except Exception:
                 pass
+        mode_val, port_val = _current_mode_portfolio()
+        metrics.setdefault("mode", mode_val)
+        metrics.setdefault("lineup_name", port_val)
         return jsonify(metrics)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
@@ -1565,6 +1687,114 @@ def ai_context():
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/ai_risk_brief")
+def ai_risk_brief():
+    """
+    Returns a cached, text-only risk brief. Cache interval controlled by
+    OMEGAFX_AI_BRIEF_MINUTES (default 5).
+    """
+    try:
+        interval_minutes = float(os.getenv("OMEGAFX_AI_BRIEF_MINUTES", "5") or "5")
+    except ValueError:
+        interval_minutes = 5.0
+    interval_seconds = max(30.0, interval_minutes * 60.0)
+    now = time.time()
+
+    def _iso(ts: float | None) -> str | None:
+        if not ts:
+            return None
+        return datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    with AI_BRIEF_LOCK:
+        ts = AI_BRIEF_CACHE.get("ts", 0.0) or 0.0
+        if ts and now - ts < interval_seconds:
+            return jsonify({
+                "text": AI_BRIEF_CACHE.get("text", "") or "",
+                "generated_at": AI_BRIEF_CACHE.get("generated_at"),
+                "cached": True,
+                "next_update_in_seconds": max(0, int(interval_seconds - (now - ts))),
+                "error": AI_BRIEF_CACHE.get("error"),
+            })
+
+    if client is None:
+        detail = "OPENAI_API_KEY is missing." if not OPENAI_API_KEY else "openai package is not installed."
+        text = f"AI Risk Brief unavailable: {detail}"
+        with AI_BRIEF_LOCK:
+            AI_BRIEF_CACHE.update({
+                "ts": now,
+                "text": text,
+                "error": "ai_not_configured",
+                "generated_at": _iso(now),
+            })
+        return jsonify({
+            "text": text,
+            "generated_at": _iso(now),
+            "cached": False,
+            "next_update_in_seconds": int(interval_seconds),
+            "error": "ai_not_configured",
+        })
+
+    try:
+        resp = ai_context()
+        ctx = resp.get_json() if hasattr(resp, "get_json") else {}
+    except Exception:
+        ctx = {}
+    context_str = json.dumps(ctx or {}, ensure_ascii=False, default=str)
+    messages = [
+        {"role": "system", "content": AI_SYSTEM_PROMPT.strip()},
+        {"role": "user", "content": (
+            "Provide a concise, text-only AI Risk Brief using ONLY the JSON below.\n"
+            "If a value is missing, say 'unknown'.\n"
+            "Summarize:\n"
+            "- Account state (mode, lineup, runner, equity, pnl, dd)\n"
+            "- Risk flags (streaks, dd alerts, heartbeat)\n"
+            "- Action recommended: YES/NO (judgment only, no instructions)\n"
+            "Include one Evidence line listing JSON fields used (e.g., live_metrics.pnl_today_pct).\n"
+            "Keep it under ~6 short lines. Do NOT include action steps.\n\n"
+            "Context JSON:\n"
+            f"```json\n{context_str}\n```"
+        )},
+    ]
+    try:
+        completion = client.chat.completions.create(
+            model="gpt-4.1",
+            messages=messages,
+            temperature=0.2,
+        )
+        text = completion.choices[0].message.content.strip()
+    except Exception as exc:
+        text = "AI Risk Brief unavailable: failed to call AI backend."
+        with AI_BRIEF_LOCK:
+            AI_BRIEF_CACHE.update({
+                "ts": now,
+                "text": text,
+                "error": str(exc),
+                "generated_at": _iso(now),
+            })
+        return jsonify({
+            "text": text,
+            "generated_at": _iso(now),
+            "cached": False,
+            "next_update_in_seconds": int(interval_seconds),
+            "error": str(exc),
+        })
+
+    with AI_BRIEF_LOCK:
+        AI_BRIEF_CACHE.update({
+            "ts": now,
+            "text": text,
+            "error": None,
+            "generated_at": _iso(now),
+        })
+    return jsonify({
+        "text": text,
+        "generated_at": _iso(now),
+        "cached": False,
+        "next_update_in_seconds": int(interval_seconds),
+        "error": None,
+    })
+
+
 @app.route("/health")
 def health():
     return jsonify({"ok": True, "message": "dashboard backend up"}), 200
@@ -1596,6 +1826,27 @@ def ai_query():
             "error": "empty_message"
         }), 400
 
+    try:
+        st = status()
+        st_json = st.get_json() if hasattr(st, "get_json") else {}
+    except Exception:
+        st_json = {}
+    if (st_json.get("matched_to_mt5_tickets_count") or 0) == 0:
+        tier = st_json.get("evidence_tier") or "practice"
+        return jsonify({
+            "answer": (
+                "AI disabled for roster/risk calls: evidence tier is "
+                f"{tier.upper()} (no MT5-verified trades)."
+            ),
+            "error": "insufficient_evidence",
+        }), 403
+
+    if not ai_ctx:
+        try:
+            resp = ai_context()
+            ai_ctx = resp.get_json() if hasattr(resp, "get_json") else {}
+        except Exception:
+            ai_ctx = {}
     context_str = json.dumps(ai_ctx, ensure_ascii=False, default=str)
     messages = [
         {"role": "system", "content": AI_SYSTEM_PROMPT.strip()},
@@ -1603,6 +1854,8 @@ def ai_query():
             "Here is the current trading context as JSON. "
             "Use it as the basis for your analysis:\n\n"
             f"```json\n{context_str}\n```\n\n"
+            "If any value is missing, say 'unknown'. "
+            "Include one Evidence line listing JSON fields used (e.g., live_metrics.pnl_today_pct).\n\n"
             f"Now answer this question from the Coach:\n\n{user_message}"
         )},
     ]
@@ -1661,13 +1914,36 @@ def edge_impact():
 
 @app.route("/check_market_data")
 def check_market_data():
-    missing = []
-    if mt5 is None:
-        return jsonify({"ok": False, "error": "mt5 not installed", "missing": ["mt5"]}), 400
-    ok, reason = mt5_preflight("demo", "multi")
-    if not ok:
-        missing.append(reason or "unknown")
-    return jsonify({"ok": not missing, "missing": missing})
+    snapshot, snapshot_status, snapshot_age, snapshot_reason = _read_account_snapshot()
+    if snapshot_status != "ok":
+        reason = snapshot_reason or snapshot_status
+        return jsonify({"ok": False, "error": reason, "missing": [reason]}), 400
+    return jsonify({"ok": True, "missing": []})
+
+
+def _watchdog_loop():
+    while True:
+        time.sleep(WATCHDOG_POLL_SECONDS)
+        state = _read_state() or {}
+        state_flag = state.get("state")
+        if state_flag == "STOPPED":
+            continue
+        hb = read_heartbeat()
+        now = time.time()
+        hb_time = hb.get("time") if hb else None
+        if hb_time and (now - hb_time) <= WATCHDOG_STALE_SECONDS:
+            continue
+        mode = state.get("mode") or current_mode or runner_mode or last_mode
+        portfolio = state.get("portfolio") or current_portfolio or runner_portfolio or last_portfolio
+        if not mode or not portfolio:
+            continue
+        write_activity(f"Watchdog restart | mode={mode} | portfolio={portfolio} | heartbeat_stale")
+        stop_runner("watchdog restarting")
+        start_runner(mode, portfolio)
+
+
+if WATCHDOG_ENABLED:
+    threading.Thread(target=_watchdog_loop, daemon=True).start()
 
 
 if __name__ == "__main__":

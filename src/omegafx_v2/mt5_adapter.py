@@ -13,7 +13,8 @@ from .runtime_loop import BrokerAdapter
 from .strategy import PlannedTrade
 from .logger import get_logger
 
-DRY_RUN = os.getenv("OMEGAFX_LIVE_MODE", "0") != "1"
+def _dry_run_enabled() -> bool:
+    return os.getenv("OMEGAFX_LIVE_MODE", "0") != "1"
 
 @dataclass
 class Mt5ConnectionConfig:
@@ -23,19 +24,22 @@ class Mt5ConnectionConfig:
 
 
 class Mt5BrokerAdapter(BrokerAdapter):
-    def __init__(self, conn: Mt5ConnectionConfig, symbol: str, dry_run: bool = False):
-        if mt5 is None and not DRY_RUN:
+    def __init__(self, conn: Mt5ConnectionConfig, symbol: str, dry_run: Optional[bool] = None):
+        if mt5 is None and not _dry_run_enabled():
             raise RuntimeError("MetaTrader5 package is not installed.")
 
         self.conn = conn
         self.symbol = symbol
-        self.dry_run = dry_run or DRY_RUN
+        self.dry_run = _dry_run_enabled() if dry_run is None else bool(dry_run)
         self.logger = get_logger()
         self.digits: Optional[int] = None
         self.point: Optional[float] = None
         self.stop_level: Optional[float] = None
         self.contract_size: Optional[float] = None
         self.last_ticket: Optional[int] = None
+        self.last_order_result: Optional[dict] = None
+        self.last_order_error: Optional[str] = None
+        self.order_send_none_count: int = 0
 
         if self.dry_run:
             self.log("MT5 adapter in DRY RUN mode (no real connection).")
@@ -50,6 +54,13 @@ class Mt5BrokerAdapter(BrokerAdapter):
         """
         if self.dry_run:
             self.last_ticket = None
+            self.last_order_result = {
+                "retcode": "DRY_RUN",
+                "comment": "dry_run",
+                "symbol": trade.symbol,
+                "volume": trade.lot_size,
+            }
+            self.last_order_error = None
             self.log(
                 f"DRY RUN: would send order: symbol={self.symbol}, lot={trade.lot_size}, "
                 f"sl={trade.stop_loss_price}, tp={trade.take_profit_price}"
@@ -88,10 +99,34 @@ class Mt5BrokerAdapter(BrokerAdapter):
             "type_time": mt5.ORDER_TIME_GTC,
         }
 
+        self.log(
+            "order_send attempt | symbol=%s | volume=%s | type=%s | sl=%s | tp=%s | magic=%s | comment=%s",
+            trade.symbol,
+            trade.lot_size,
+            "BUY" if trade.direction == "long" else "SELL",
+            sl,
+            tp,
+            magic,
+            comment,
+        )
+
         result = mt5.order_send(request)
         if result is None:
-            self.log("MT5 order_send returned None")
+            err = mt5.last_error()
+            self.order_send_none_count += 1
+            self.last_order_error = f"order_send_none | last_error={err}"
+            self.last_order_result = None
+            self.log(f"MT5 order_send returned None | last_error={err}")
             return False
+        self.last_order_error = None
+        self.last_order_result = {
+            "retcode": result.retcode,
+            "comment": getattr(result, "comment", None),
+            "order": getattr(result, "order", None),
+            "symbol": trade.symbol,
+            "volume": trade.lot_size,
+        }
+        self.log(f"order_send result | retcode={result.retcode} | comment={getattr(result,'comment',None)}")
 
         if result.retcode == mt5.TRADE_RETCODE_DONE:
             self.last_ticket = result.order
@@ -125,7 +160,9 @@ class Mt5BrokerAdapter(BrokerAdapter):
 
         return False
 
-    def log(self, message: str) -> None:
+    def log(self, message: str, *args) -> None:
+        if args:
+            message = message % args
         self.logger.info(f"[MT5Broker] {message}")
 
     def close(self) -> None:

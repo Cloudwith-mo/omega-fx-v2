@@ -26,7 +26,7 @@ Shadow trades are appended to `logs\shadow_fastpass_usdjpy_core.csv`.
 ### MT5 credentials (Demo/FTMO + MT5 scripts)
 Set credentials via env vars (recommended) or use a local bat file:
 - Env vars: `OMEGAFX_MT5_LOGIN`, `OMEGAFX_MT5_PASSWORD`, `OMEGAFX_MT5_SERVER` (also supports `MT5_LOGIN`, `MT5_PASSWORD`, `MT5_SERVER`)
-- Bat helper: copy `mt5_creds.local.bat.template` → `mt5_creds.local.bat` and fill your credentials (git-ignored)
+- Bat helper: copy `mt5_creds.local.bat.template` to `mt5_creds.local.bat` and fill your credentials (git-ignored)
 
 ### Generate a consolidated FastPass research report
 ```powershell
@@ -38,3 +38,10 @@ Optional: set `FASTPASS_RUN_EVALS=1` to re-run light MT5 evals during report gen
 ## Version
 - Current frozen version: `FastPass_V3_multi_0.1` (see VERSION.md)
 - Includes USDJPY FastPass V3, GBPJPY Core, multi FTMO pipelines, and dashboard wiring.
+
+## Operator Checklist (Quick Ops)
+- Start (always-on): run `RUN_OMEGA_A.bat` (runner + dashboard).
+- Stop trading: use the dashboard STOP/Timeout button (BOT DISARMED).
+- BOT ARMED means the runner is alive and permitted to trade; DISARMED means runner alive but not trading; BOT DOWN means runner heartbeat is stale/offline.
+- If BOT DOWN: check `logs\acct_A\runner_lifecycle.log` and `logs\acct_A\runner_errors.log`, then restart `RUN_OMEGA_A.bat`.
+- Logs (Acct A default): `logs\acct_A\` for heartbeat, lifecycle, errors, equity, and trade logs.

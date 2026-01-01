@@ -1,10 +1,11 @@
 @echo off
+cd /d "%~dp0"
 cd "%~dp0"
 call .venv\Scripts\activate
 set PYTHONPATH=src
 rem Load MT5 credentials from a local, git-ignored file if present:
-rem   copy mt5_creds.local.bat.template -> mt5_creds.local.bat
-if exist mt5_creds.local.bat call mt5_creds.local.bat
+rem   copy .\mt5_creds.local.bat.template -> .\mt5_creds.local.bat
+if exist .\mt5_creds.local.bat call .\mt5_creds.local.bat
 set NUM_EVALS=200
 set TOTAL_HISTORY_DAYS=270
 set USE_REGIME_MASKS=1
