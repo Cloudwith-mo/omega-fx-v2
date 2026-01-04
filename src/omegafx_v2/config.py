@@ -15,6 +15,67 @@ XAUUSD_SPEC = InstrumentSpec(
     pip_value_per_lot=1.0,  # 1 USD per 0.01 move per lot
 )
 
+FX_CONTRACT_SIZE = 100000.0
+
+
+def _normalize_symbol(symbol: str) -> str:
+    return (symbol or "").upper().strip()
+
+
+def _split_fx_symbol(symbol: str) -> tuple[str, str]:
+    sym = _normalize_symbol(symbol)
+    if len(sym) == 6 and sym.isalpha():
+        return sym[:3], sym[3:]
+    return sym, ""
+
+
+def is_fx_symbol(symbol: str) -> bool:
+    sym = _normalize_symbol(symbol)
+    return len(sym) == 6 and sym.isalpha()
+
+
+def get_pip_size(symbol: str) -> float:
+    sym = _normalize_symbol(symbol)
+    if sym == XAUUSD_SPEC.symbol:
+        return XAUUSD_SPEC.pip_size
+    if is_fx_symbol(sym):
+        return 0.01 if sym.endswith("JPY") else 0.0001
+    return 0.0001
+
+
+def get_point_size(symbol: str) -> float:
+    sym = _normalize_symbol(symbol)
+    if sym == XAUUSD_SPEC.symbol:
+        return XAUUSD_SPEC.pip_size
+    if is_fx_symbol(sym):
+        return 0.001 if sym.endswith("JPY") else 0.00001
+    return get_pip_size(sym) / 10.0
+
+
+def get_digits(symbol: str) -> int:
+    sym = _normalize_symbol(symbol)
+    if sym == XAUUSD_SPEC.symbol:
+        return 2
+    if is_fx_symbol(sym):
+        return 3 if sym.endswith("JPY") else 5
+    return 5
+
+
+def get_pip_value_per_lot(symbol: str, price: float) -> float:
+    sym = _normalize_symbol(symbol)
+    if sym == XAUUSD_SPEC.symbol:
+        return XAUUSD_SPEC.pip_value_per_lot
+    if not is_fx_symbol(sym):
+        return XAUUSD_SPEC.pip_value_per_lot
+    pip_size = get_pip_size(sym)
+    pip_value_quote = pip_size * FX_CONTRACT_SIZE
+    base, quote = _split_fx_symbol(sym)
+    if quote == "USD":
+        return pip_value_quote
+    if base == "USD":
+        return pip_value_quote / price if price else pip_value_quote
+    return pip_value_quote / price if price else pip_value_quote
+
 
 @dataclass(frozen=True)
 class TradingCosts:
@@ -56,9 +117,23 @@ class TradingSession:
 
 DEFAULT_SESSION = TradingSession(
     name="XAU_London_NY",
-    allowed_weekdays=(0, 1, 2, 3, 4),  # Mon–Fri
+    allowed_weekdays=(0, 1, 2, 3, 4),  # Mon‑Fri
     start_hour=7,
     end_hour=20,
+)
+
+LONDON_SESSION = TradingSession(
+    name="FX_London",
+    allowed_weekdays=(0, 1, 2, 3, 4),
+    start_hour=7,
+    end_hour=13,
+)
+
+NY_SESSION = TradingSession(
+    name="FX_NY",
+    allowed_weekdays=(0, 1, 2, 3, 4),
+    start_hour=13,
+    end_hour=17,
 )
 
 
@@ -236,6 +311,19 @@ DEFAULT_MOMENTUM_PINBALL_CONFIG_M5 = MomentumPinballSignalConfig(
     atr_period=14,
     atr_filter_percentile=75,
     max_trades_per_day=2,
+    atr_min_percentile=70,
+)
+
+WESTBROOK_MOMENTUM_PINBALL_CONFIG_M5 = MomentumPinballSignalConfig(
+    trend_ma_period=20,
+    rsi_period=2,
+    rsi_oversold=10,
+    rsi_overbought=90,
+    atr_period=14,
+    atr_filter_percentile=75,
+    max_trades_per_day=10,
+    ny_session_start_hour=13,
+    ny_session_end_hour=17,
     atr_min_percentile=70,
 )
 
@@ -545,6 +633,23 @@ DEFAULT_PROFILE_USDJPY_MOMENTUM_M5_V1 = StrategyProfile(
     ),
 )
 
+WESTBROOK_PROFILE_USDJPY_MOMENTUM_M5_V1 = StrategyProfile(
+    name="USDJPY_M5_MomentumPinball_V1",
+    symbol_key="USDJPY",
+    timeframe="5m",
+    strategy=DEFAULT_STRATEGY,
+    signals=WESTBROOK_MOMENTUM_PINBALL_CONFIG_M5,
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=DEFAULT_SESSION,
+    edge_regime_config=EdgeRegimeConfig(
+        allow_in_low_vol=False,
+        allow_in_high_vol_trend=True,
+        allow_in_high_vol_reversal=False,
+        allow_in_chop=False,
+    ),
+)
+
 EXPERIMENTAL_PROFILE_USDJPY_TREND_KD_M15_V1 = StrategyProfile(
     name="USDJPY_M15_TrendKD_V1",
     symbol_key="USDJPY",
@@ -756,6 +861,232 @@ DEFAULT_PROFILE_GBPJPY_LIQUI_M15_V1 = StrategyProfile(
     ),
 )
 
+DEFAULT_PROFILE_EURUSD_LONDON_M15_V1 = StrategyProfile(
+    name="EURUSD_M15_LondonBreakout_V1",
+    symbol_key="EURUSD",
+    timeframe="15m",
+    strategy=DEFAULT_STRATEGY,
+    signals=DEFAULT_LONDON_BREAKOUT_SIGNAL_CONFIG,
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=DEFAULT_SESSION,
+    edge_regime_config=EdgeRegimeConfig(
+        allow_in_low_vol=False,
+        allow_in_high_vol_trend=True,
+        allow_in_high_vol_reversal=True,
+        allow_in_chop=False,
+    ),
+)
+
+DEFAULT_PROFILE_EURUSD_LIQUI_M15_V1 = StrategyProfile(
+    name="EURUSD_M15_LiquiditySweep_V1",
+    symbol_key="EURUSD",
+    timeframe="15m",
+    strategy=DEFAULT_STRATEGY,
+    signals=DEFAULT_LIQUIDITY_SWEEP_SIGNAL_CONFIG,
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=DEFAULT_SESSION,
+    edge_regime_config=EdgeRegimeConfig(
+        allow_in_low_vol=False,
+        allow_in_high_vol_trend=True,
+        allow_in_high_vol_reversal=True,
+        allow_in_chop=False,
+    ),
+)
+
+DEFAULT_PROFILE_AUDUSD_LONDON_M15_V1 = StrategyProfile(
+    name="AUDUSD_M15_LondonBreakout_V1",
+    symbol_key="AUDUSD",
+    timeframe="15m",
+    strategy=DEFAULT_STRATEGY,
+    signals=DEFAULT_LONDON_BREAKOUT_SIGNAL_CONFIG,
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=DEFAULT_SESSION,
+    edge_regime_config=EdgeRegimeConfig(
+        allow_in_low_vol=False,
+        allow_in_high_vol_trend=True,
+        allow_in_high_vol_reversal=True,
+        allow_in_chop=False,
+    ),
+)
+
+DEFAULT_PROFILE_AUDUSD_LIQUI_M15_V1 = StrategyProfile(
+    name="AUDUSD_M15_LiquiditySweep_V1",
+    symbol_key="AUDUSD",
+    timeframe="15m",
+    strategy=DEFAULT_STRATEGY,
+    signals=DEFAULT_LIQUIDITY_SWEEP_SIGNAL_CONFIG,
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=DEFAULT_SESSION,
+    edge_regime_config=EdgeRegimeConfig(
+        allow_in_low_vol=False,
+        allow_in_high_vol_trend=True,
+        allow_in_high_vol_reversal=True,
+        allow_in_chop=False,
+    ),
+)
+
+DEFAULT_PROFILE_USDCAD_LONDON_M15_V1 = StrategyProfile(
+    name="USDCAD_M15_LondonBreakout_V1",
+    symbol_key="USDCAD",
+    timeframe="15m",
+    strategy=DEFAULT_STRATEGY,
+    signals=DEFAULT_LONDON_BREAKOUT_SIGNAL_CONFIG,
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=DEFAULT_SESSION,
+    edge_regime_config=EdgeRegimeConfig(
+        allow_in_low_vol=False,
+        allow_in_high_vol_trend=True,
+        allow_in_high_vol_reversal=True,
+        allow_in_chop=False,
+    ),
+)
+
+DEFAULT_PROFILE_USDCAD_LIQUI_M15_V1 = StrategyProfile(
+    name="USDCAD_M15_LiquiditySweep_V1",
+    symbol_key="USDCAD",
+    timeframe="15m",
+    strategy=DEFAULT_STRATEGY,
+    signals=DEFAULT_LIQUIDITY_SWEEP_SIGNAL_CONFIG,
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=DEFAULT_SESSION,
+    edge_regime_config=EdgeRegimeConfig(
+        allow_in_low_vol=False,
+        allow_in_high_vol_trend=True,
+        allow_in_high_vol_reversal=True,
+        allow_in_chop=False,
+    ),
+)
+
+DEFAULT_PROFILE_AUDUSD_NY_TREND_M15_V1 = StrategyProfile(
+    name="AUDUSD_M15_NYTrendPullback_V1",
+    symbol_key="AUDUSD",
+    timeframe="15m",
+    strategy=DEFAULT_STRATEGY,
+    signals=DEFAULT_TREND_SIGNAL_CONFIG,
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=NY_SESSION,
+)
+
+DEFAULT_PROFILE_USDCAD_NY_TREND_M15_V1 = StrategyProfile(
+    name="USDCAD_M15_NYTrendPullback_V1",
+    symbol_key="USDCAD",
+    timeframe="15m",
+    strategy=DEFAULT_STRATEGY,
+    signals=DEFAULT_TREND_SIGNAL_CONFIG,
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=NY_SESSION,
+)
+
+DEFAULT_PROFILE_GBPUSD_LONDON_M15_V1 = StrategyProfile(
+    name="GBPUSD_M15_LondonBreakout_V1",
+    symbol_key="GBPUSD",
+    timeframe="15m",
+    strategy=DEFAULT_STRATEGY,
+    signals=DEFAULT_LONDON_BREAKOUT_SIGNAL_CONFIG,
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=DEFAULT_SESSION,
+    edge_regime_config=EdgeRegimeConfig(
+        allow_in_low_vol=False,
+        allow_in_high_vol_trend=True,
+        allow_in_high_vol_reversal=True,
+        allow_in_chop=False,
+    ),
+)
+
+DEFAULT_PROFILE_GBPUSD_LIQUI_M15_V1 = StrategyProfile(
+    name="GBPUSD_M15_LiquiditySweep_V1",
+    symbol_key="GBPUSD",
+    timeframe="15m",
+    strategy=DEFAULT_STRATEGY,
+    signals=DEFAULT_LIQUIDITY_SWEEP_SIGNAL_CONFIG,
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=DEFAULT_SESSION,
+    edge_regime_config=EdgeRegimeConfig(
+        allow_in_low_vol=False,
+        allow_in_high_vol_trend=True,
+        allow_in_high_vol_reversal=True,
+        allow_in_chop=False,
+    ),
+)
+
+SCORERS_PROFILE_USDJPY_LONDON_M15_V1 = StrategyProfile(
+    name="USDJPY_M15_LondonBreakout_V1",
+    symbol_key="USDJPY",
+    timeframe="15m",
+    strategy=DEFAULT_STRATEGY,
+    signals=DEFAULT_LONDON_BREAKOUT_SIGNAL_CONFIG,
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=LONDON_SESSION,
+    edge_regime_config=EdgeRegimeConfig(
+        allow_in_low_vol=False,
+        allow_in_high_vol_trend=True,
+        allow_in_high_vol_reversal=True,
+        allow_in_chop=False,
+    ),
+)
+
+SCORERS_PROFILE_GBPJPY_LONDON_M15_V1 = StrategyProfile(
+    name="GBPJPY_M15_LondonBreakout_V1",
+    symbol_key="GBPJPY",
+    timeframe="15m",
+    strategy=DEFAULT_STRATEGY,
+    signals=DEFAULT_LONDON_BREAKOUT_SIGNAL_CONFIG_GBPJPY,
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=LONDON_SESSION,
+    edge_regime_config=EdgeRegimeConfig(
+        allow_in_low_vol=False,
+        allow_in_high_vol_trend=True,
+        allow_in_high_vol_reversal=True,
+        allow_in_chop=False,
+    ),
+)
+
+SCORERS_PROFILE_EURUSD_LONDON_M15_V1 = StrategyProfile(
+    name="EURUSD_M15_LondonBreakout_V1",
+    symbol_key="EURUSD",
+    timeframe="15m",
+    strategy=DEFAULT_STRATEGY,
+    signals=DEFAULT_LONDON_BREAKOUT_SIGNAL_CONFIG,
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=LONDON_SESSION,
+    edge_regime_config=EdgeRegimeConfig(
+        allow_in_low_vol=False,
+        allow_in_high_vol_trend=True,
+        allow_in_high_vol_reversal=True,
+        allow_in_chop=False,
+    ),
+)
+
+SCORERS_PROFILE_GBPUSD_LONDON_M15_V1 = StrategyProfile(
+    name="GBPUSD_M15_LondonBreakout_V1",
+    symbol_key="GBPUSD",
+    timeframe="15m",
+    strategy=DEFAULT_STRATEGY,
+    signals=DEFAULT_LONDON_BREAKOUT_SIGNAL_CONFIG,
+    challenge=DEFAULT_CHALLENGE,
+    costs=DEFAULT_COSTS,
+    session=LONDON_SESSION,
+    edge_regime_config=EdgeRegimeConfig(
+        allow_in_low_vol=False,
+        allow_in_high_vol_trend=True,
+        allow_in_high_vol_reversal=True,
+        allow_in_chop=False,
+    ),
+)
+
 DEFAULT_PORTFOLIO_GBPJPY_FASTPASS_CORE = PortfolioProfile(
     name="GBPJPY_FastPass_Core",
     strategies=[
@@ -764,6 +1095,149 @@ DEFAULT_PORTFOLIO_GBPJPY_FASTPASS_CORE = PortfolioProfile(
     ],
     risk_scales=[1.5, 0.5],
     portfolio_daily_loss_pct=0.03,
+    portfolio_max_loss_pct=0.095,
+)
+
+DEFAULT_PORTFOLIO_EURUSD_FASTPASS_CORE = PortfolioProfile(
+    name="EURUSD_FastPass_Core",
+    strategies=[
+        DEFAULT_PROFILE_EURUSD_LONDON_M15_V1,
+        DEFAULT_PROFILE_EURUSD_LIQUI_M15_V1,
+    ],
+    risk_scales=[1.5, 0.5],
+    portfolio_daily_loss_pct=0.03,
+    portfolio_max_loss_pct=0.095,
+)
+
+DEFAULT_PORTFOLIO_AUDUSD_FASTPASS_CORE = PortfolioProfile(
+    name="AUDUSD_FastPass_Core",
+    strategies=[
+        DEFAULT_PROFILE_AUDUSD_LONDON_M15_V1,
+        DEFAULT_PROFILE_AUDUSD_LIQUI_M15_V1,
+    ],
+    risk_scales=[1.5, 0.5],
+    portfolio_daily_loss_pct=0.03,
+    portfolio_max_loss_pct=0.095,
+)
+
+DEFAULT_PORTFOLIO_USDCAD_FASTPASS_CORE = PortfolioProfile(
+    name="USDCAD_FastPass_Core",
+    strategies=[
+        DEFAULT_PROFILE_USDCAD_LONDON_M15_V1,
+        DEFAULT_PROFILE_USDCAD_LIQUI_M15_V1,
+    ],
+    risk_scales=[1.5, 0.5],
+    portfolio_daily_loss_pct=0.03,
+    portfolio_max_loss_pct=0.095,
+)
+
+DEFAULT_PORTFOLIO_AUDUSD_NY_TREND = PortfolioProfile(
+    name="AUDUSD_NYTrendPullback",
+    strategies=[
+        DEFAULT_PROFILE_AUDUSD_NY_TREND_M15_V1,
+    ],
+    risk_scales=[1.0],
+    portfolio_daily_loss_pct=0.03,
+    portfolio_max_loss_pct=0.095,
+)
+
+DEFAULT_PORTFOLIO_USDCAD_NY_TREND = PortfolioProfile(
+    name="USDCAD_NYTrendPullback",
+    strategies=[
+        DEFAULT_PROFILE_USDCAD_NY_TREND_M15_V1,
+    ],
+    risk_scales=[1.0],
+    portfolio_daily_loss_pct=0.03,
+    portfolio_max_loss_pct=0.095,
+)
+
+DEFAULT_PORTFOLIO_GBPUSD_FASTPASS_CORE = PortfolioProfile(
+    name="GBPUSD_FastPass_Core",
+    strategies=[
+        DEFAULT_PROFILE_GBPUSD_LONDON_M15_V1,
+        DEFAULT_PROFILE_GBPUSD_LIQUI_M15_V1,
+    ],
+    risk_scales=[1.5, 0.5],
+    portfolio_daily_loss_pct=0.03,
+    portfolio_max_loss_pct=0.095,
+)
+
+SCORERS_PORTFOLIO_USDJPY = PortfolioProfile(
+    name="USDJPY_LondonOnly",
+    strategies=[
+        SCORERS_PROFILE_USDJPY_LONDON_M15_V1,
+    ],
+    risk_scales=[1.6],
+    portfolio_daily_loss_pct=0.03,
+    portfolio_max_loss_pct=0.095,
+)
+
+SCORERS_PORTFOLIO_GBPJPY = PortfolioProfile(
+    name="GBPJPY_LondonOnly",
+    strategies=[
+        SCORERS_PROFILE_GBPJPY_LONDON_M15_V1,
+    ],
+    risk_scales=[1.5],
+    portfolio_daily_loss_pct=0.03,
+    portfolio_max_loss_pct=0.095,
+)
+
+SCORERS_PORTFOLIO_EURUSD = PortfolioProfile(
+    name="EURUSD_LondonOnly",
+    strategies=[
+        SCORERS_PROFILE_EURUSD_LONDON_M15_V1,
+    ],
+    risk_scales=[1.5],
+    portfolio_daily_loss_pct=0.03,
+    portfolio_max_loss_pct=0.095,
+)
+
+SCORERS_PORTFOLIO_GBPUSD = PortfolioProfile(
+    name="GBPUSD_LondonOnly",
+    strategies=[
+        SCORERS_PROFILE_GBPUSD_LONDON_M15_V1,
+    ],
+    risk_scales=[1.5],
+    portfolio_daily_loss_pct=0.03,
+    portfolio_max_loss_pct=0.095,
+)
+
+WESTBROOK_PORTFOLIO_USDJPY = PortfolioProfile(
+    name="USDJPY_Westbrook",
+    strategies=[
+        WESTBROOK_PROFILE_USDJPY_MOMENTUM_M5_V1,
+    ],
+    risk_scales=[0.05],
+    portfolio_daily_loss_pct=0.02,
+    portfolio_max_loss_pct=0.10,
+)
+
+MULTI_PORTFOLIO_SCORERS = MultiSymbolPortfolioProfile(
+    name="Scorers_LondonOnly",
+    symbols=["USDJPY", "GBPJPY", "EURUSD", "GBPUSD"],
+    portfolios=[
+        SCORERS_PORTFOLIO_USDJPY,
+        SCORERS_PORTFOLIO_GBPJPY,
+        SCORERS_PORTFOLIO_EURUSD,
+        SCORERS_PORTFOLIO_GBPUSD,
+    ],
+    symbol_risk_scales=[1.0, 1.0, 1.0, 1.0],
+    portfolio_daily_loss_pct=0.05,
+    portfolio_max_loss_pct=0.095,
+)
+
+MULTI_PORTFOLIO_COMBINED = MultiSymbolPortfolioProfile(
+    name="Combined_Scorers_Westbrook",
+    symbols=["USDJPY", "GBPJPY", "EURUSD", "GBPUSD"],
+    portfolios=[
+        SCORERS_PORTFOLIO_USDJPY,
+        SCORERS_PORTFOLIO_GBPJPY,
+        SCORERS_PORTFOLIO_EURUSD,
+        SCORERS_PORTFOLIO_GBPUSD,
+        WESTBROOK_PORTFOLIO_USDJPY,
+    ],
+    symbol_risk_scales=[1.0, 1.0, 1.0, 1.0, 1.0],
+    portfolio_daily_loss_pct=0.05,
     portfolio_max_loss_pct=0.095,
 )
 
@@ -776,6 +1250,22 @@ MULTI_PORTFOLIO_USDJPY_GBPJPY_FASTPASS = MultiSymbolPortfolioProfile(
         DEFAULT_PORTFOLIO_GBPJPY_FASTPASS_CORE,
     ],
     symbol_risk_scales=[1.0, 0.75],
+    portfolio_daily_loss_pct=0.05,
+    portfolio_max_loss_pct=0.095,
+)
+
+MULTI_PORTFOLIO_SPLASH_PASS = MultiSymbolPortfolioProfile(
+    name="SplashPass_Multi",
+    symbols=["USDJPY", "GBPJPY", "EURUSD", "GBPUSD", "AUDUSD", "USDCAD"],
+    portfolios=[
+        DEFAULT_PORTFOLIO_USDJPY_FASTPASS_V3,
+        DEFAULT_PORTFOLIO_GBPJPY_FASTPASS_CORE,
+        DEFAULT_PORTFOLIO_EURUSD_FASTPASS_CORE,
+        DEFAULT_PORTFOLIO_GBPUSD_FASTPASS_CORE,
+        DEFAULT_PORTFOLIO_AUDUSD_NY_TREND,
+        DEFAULT_PORTFOLIO_USDCAD_NY_TREND,
+    ],
+    symbol_risk_scales=[1.0, 0.75, 1.0, 1.0, 1.0, 1.0],
     portfolio_daily_loss_pct=0.05,
     portfolio_max_loss_pct=0.095,
 )

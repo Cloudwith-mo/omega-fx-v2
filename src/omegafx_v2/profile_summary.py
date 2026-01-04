@@ -47,12 +47,14 @@ def _build_signals_for_profile(ohlc, profile: StrategyProfile):
             ohlc,
             signal_config=sig_cfg,
             session=profile.session,
+            symbol=profile.symbol_key,
         )
     if isinstance(sig_cfg, LiquiditySweepSignalConfig):
         return build_liquidity_sweep_signals(
             ohlc,
             signal_config=sig_cfg,
             session=profile.session,
+            symbol=profile.symbol_key,
         )
     raise TypeError(f"Unsupported signals config type: {type(sig_cfg)!r}")
 

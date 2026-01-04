@@ -22,6 +22,7 @@ from .config import (
     BigManSignalConfig,
     SignalConfig,
     TradingSession,
+    get_pip_size,
 )
 
 
@@ -229,6 +230,7 @@ def build_london_breakout_signals(
     ohlc: pd.DataFrame,
     signal_config: LondonBreakoutSignalConfig = DEFAULT_LONDON_BREAKOUT_SIGNAL_CONFIG,
     session: TradingSession = DEFAULT_SESSION,
+    symbol: str | None = None,
 ) -> pd.Series:
     """
     Simple London breakout: breakout above prior pre-session high with ATR + session filters.
@@ -243,7 +245,7 @@ def build_london_breakout_signals(
     pre_mask = (hours >= signal_config.pre_session_start_hour) & (hours < signal_config.pre_session_end_hour)
     pre_session_high = ohlc["high"].where(pre_mask).groupby(dates).transform("max").shift(1)
 
-    pip_size = 0.01
+    pip_size = get_pip_size(symbol or "") if symbol else 0.01
     buffer = signal_config.breakout_buffer_pips * pip_size
     breakout = ohlc["close"] > (pre_session_high + buffer)
 
@@ -273,6 +275,7 @@ def build_liquidity_sweep_signals(
     ohlc: pd.DataFrame,
     signal_config: LiquiditySweepSignalConfig = DEFAULT_LIQUIDITY_SWEEP_SIGNAL_CONFIG,
     session: TradingSession = DEFAULT_SESSION,
+    symbol: str | None = None,
 ) -> pd.Series:
     """
     Basic liquidity sweep: look for sweeps of recent lows that fail and close back above.
@@ -281,7 +284,7 @@ def build_liquidity_sweep_signals(
     if not isinstance(ohlc.index, pd.DatetimeIndex):
         raise ValueError("ohlc index must be DatetimeIndex")
 
-    pip_size = 0.01
+    pip_size = get_pip_size(symbol or "") if symbol else 0.01
     threshold = signal_config.sweep_threshold_pips * pip_size
 
     recent_low = ohlc["low"].rolling(signal_config.lookback_levels).min().shift(1)

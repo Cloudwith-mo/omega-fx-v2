@@ -14,6 +14,9 @@ from .config import (
     StrategyConfig,
     TradingCosts,
     XAUUSD_SPEC,
+    get_pip_size,
+    get_pip_value_per_lot,
+    is_fx_symbol,
 )
 from .strategy import plan_single_trade
 
@@ -24,9 +27,11 @@ class TradeOutcome:
     exit_time: pd.Timestamp
     entry_price: float
     exit_price: float
-    exit_reason: str  # "tp" | "sl" | "end"
+    exit_reason: str  # "tp" | "sl" | "time" | "end"
     pnl: float
     pnl_pct: float
+    hold_minutes: float
+    forced_close: bool
 
 
 @dataclass
@@ -63,14 +68,16 @@ def simulate_trade_path(
     account_balance: float,
     config: StrategyConfig = DEFAULT_STRATEGY,
     costs: Optional[TradingCosts] = DEFAULT_COSTS,
+    max_hold_minutes: Optional[float] = 5 * 24 * 60,
 ) -> TradeOutcome:
     """
-    Simulate a single long trade on XAUUSD:
+    Simulate a single long trade:
     - Use close at `entry_idx` as the entry price.
     - Use plan_single_trade to compute SL/TP levels.
     - Walk forward bar by bar; check if SL or TP is hit.
     - If both hit in same candle, assume SL first.
     - If neither hit before data ends, close at final close.
+    - If max_hold_minutes is exceeded, force close at current bar close.
     """
     if entry_idx < 0 or entry_idx >= len(ohlc) - 1:
         raise IndexError("entry_idx must point to a bar with at least one bar after it")
@@ -94,6 +101,7 @@ def simulate_trade_path(
     exit_time = ohlc.index[-1]
     exit_price = float(ohlc["close"].iloc[-1])
     exit_reason = "end"
+    forced_close = False
 
     for ts, row in ohlc.iloc[entry_idx + 1 :].iterrows():
         low = float(row["low"])
@@ -117,21 +125,37 @@ def simulate_trade_path(
             exit_price = tp
             exit_reason = "tp"
             break
+        if max_hold_minutes is not None:
+            hold_minutes = (ts - entry_time).total_seconds() / 60.0
+            if hold_minutes >= max_hold_minutes:
+                exit_time = ts
+                exit_price = float(row["close"])
+                exit_reason = "time"
+                forced_close = True
+                break
 
+    symbol = config.symbol or trade_plan.symbol
+    if is_fx_symbol(symbol):
+        pip_size = get_pip_size(symbol)
+        pip_value_per_lot = get_pip_value_per_lot(symbol, entry_price)
+    else:
+        pip_size = XAUUSD_SPEC.pip_size
+        pip_value_per_lot = XAUUSD_SPEC.pip_value_per_lot
     price_move = exit_price - entry_price
-    pips_move = price_move / XAUUSD_SPEC.pip_size
-    gross_pnl = pips_move * XAUUSD_SPEC.pip_value_per_lot * trade_plan.lot_size
+    pips_move = price_move / pip_size
+    gross_pnl = pips_move * pip_value_per_lot * trade_plan.lot_size
 
     round_trip_cost = 0.0
     if costs is not None:
         round_trip_cost = (
-            costs.spread_pips * XAUUSD_SPEC.pip_value_per_lot * trade_plan.lot_size
+            costs.spread_pips * pip_value_per_lot * trade_plan.lot_size
             + costs.commission_per_lot_round_trip * trade_plan.lot_size
         )
 
     pnl = gross_pnl - round_trip_cost
     pnl_pct = pnl / account_balance
 
+    hold_minutes = (exit_time - entry_time).total_seconds() / 60.0
     return TradeOutcome(
         entry_time=entry_time,
         exit_time=exit_time,
@@ -140,6 +164,8 @@ def simulate_trade_path(
         exit_reason=exit_reason,
         pnl=pnl,
         pnl_pct=pnl_pct,
+        hold_minutes=hold_minutes,
+        forced_close=forced_close,
     )
 
 

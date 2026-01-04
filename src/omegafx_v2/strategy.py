@@ -1,7 +1,15 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from .config import DEFAULT_STRATEGY, InstrumentSpec, StrategyConfig, XAUUSD_SPEC
+from .config import (
+    DEFAULT_STRATEGY,
+    InstrumentSpec,
+    StrategyConfig,
+    XAUUSD_SPEC,
+    get_pip_size,
+    get_pip_value_per_lot,
+    is_fx_symbol,
+)
 
 
 @dataclass
@@ -37,7 +45,7 @@ def plan_single_trade(
     instrument: InstrumentSpec = XAUUSD_SPEC,
 ) -> PlannedTrade:
     """
-    Plan a single long trade on XAUUSD:
+    Plan a single long trade:
     - Fixed lot size from config
     - Risk a fixed percent of the account, target a fixed percent reward
     - Compute stop-loss and take-profit prices from pip value assumptions
@@ -45,12 +53,19 @@ def plan_single_trade(
     risk_amount = account_balance * config.risk_per_trade_pct
     reward_amount = account_balance * config.reward_per_trade_pct
     account_profit_target = account_balance * config.profit_target_pct
-    risk_pips = risk_amount / (instrument.pip_value_per_lot * config.fixed_lot_size)
-    reward_pips = reward_amount / (instrument.pip_value_per_lot * config.fixed_lot_size)
+    symbol = config.symbol or instrument.symbol
+    if is_fx_symbol(symbol):
+        pip_size = get_pip_size(symbol)
+        pip_value_per_lot = get_pip_value_per_lot(symbol, current_price)
+    else:
+        pip_size = instrument.pip_size
+        pip_value_per_lot = instrument.pip_value_per_lot
+    risk_pips = risk_amount / (pip_value_per_lot * config.fixed_lot_size)
+    reward_pips = reward_amount / (pip_value_per_lot * config.fixed_lot_size)
 
     entry_price = current_price
-    stop_loss_price = entry_price - risk_pips * instrument.pip_size
-    take_profit_price = entry_price + reward_pips * instrument.pip_size
+    stop_loss_price = entry_price - risk_pips * pip_size
+    take_profit_price = entry_price + reward_pips * pip_size
 
     return PlannedTrade(
         symbol=config.symbol,

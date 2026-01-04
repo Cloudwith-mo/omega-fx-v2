@@ -122,7 +122,9 @@ def evaluate_policy(state: Dict[str, Any], equity: float, symbols, now_ts: float
 
 
 def write_policy(policy: Dict[str, Any]) -> None:
-    POLICY_FILE.write_text(json.dumps(policy, indent=2), encoding="utf-8")
+    payload = dict(policy)
+    payload["timestamp_utc"] = datetime.utcnow().isoformat()
+    POLICY_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def record_trade(state: Dict[str, Any], symbol: str, pnl: float, ts: float, cfg: PolicyConfig) -> None:

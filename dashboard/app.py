@@ -35,6 +35,8 @@ COMMAND_FILE = LOG_DIR / "runner_command.json"
 POLICY_FILE = LOG_DIR / "policy.json"
 IDENTITY_FILE = LOG_DIR / "identity.json"
 ACCOUNT_SNAPSHOT_FILE = LOG_DIR / "account_snapshot.json"
+RESEARCH_PACKET_FILE = LOG_DIR / "research_packet.json"
+PAPER_SHOTS_LOG = LOG_DIR / "paper_shots.csv"
 POLICY_FILE = LOG_DIR / "policy.json"
 IDENTITY_STALE_SECONDS = int(os.getenv("OMEGAFX_IDENTITY_STALE_SECONDS", "300"))
 ACCOUNT_SNAPSHOT_STALE_SECONDS = int(os.getenv("OMEGAFX_ACCOUNT_SNAPSHOT_STALE_SECONDS", "30"))
@@ -44,6 +46,21 @@ WATCHDOG_STALE_SECONDS = int(os.getenv("OMEGAFX_WATCHDOG_STALE_SECONDS", "60"))
 WATCHDOG_POLL_SECONDS = int(os.getenv("OMEGAFX_WATCHDOG_POLL_SECONDS", "10"))
 
 app = Flask(__name__)
+
+
+@app.after_request
+def add_no_cache_headers(response):
+    path = request.path or ""
+    if path == "/" or path.startswith("/static/") or response.mimetype in {
+        "text/html",
+        "text/css",
+        "application/javascript",
+        "text/javascript",
+    }:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 
 
 def _read_json_file(path: Path) -> dict:
@@ -468,8 +485,10 @@ def mt5_preflight(mode: str, portfolio: str):
         mt5.shutdown()
         return False, "equity is 0"
     symbols = ["USDJPY"]
+    if portfolio in {"multi", "scorers", "combined"}:
+        symbols.extend(["GBPJPY", "EURUSD", "GBPUSD"])
     if portfolio == "multi":
-        symbols.append("GBPJPY")
+        symbols.extend(["AUDUSD", "USDCAD"])
     for sym in symbols:
         if not mt5.symbol_select(sym, True):
             mt5.shutdown()
@@ -493,6 +512,15 @@ def start_runner(mode: str, portfolio: str):
         if portfolio == "multi":
             env["OMEGAFX_EQUITY_LOG"] = str(LOG_DIR / "demo_multi_equity.csv")
             env["OMEGAFX_TRADE_LOG"] = str(LOG_DIR / "demo_multi_trades.csv")
+        elif portfolio == "scorers":
+            env["OMEGAFX_EQUITY_LOG"] = str(LOG_DIR / "demo_scorers_equity.csv")
+            env["OMEGAFX_TRADE_LOG"] = str(LOG_DIR / "demo_scorers_trades.csv")
+        elif portfolio == "westbrook":
+            env["OMEGAFX_EQUITY_LOG"] = str(LOG_DIR / "demo_westbrook_equity.csv")
+            env["OMEGAFX_TRADE_LOG"] = str(LOG_DIR / "demo_westbrook_trades.csv")
+        elif portfolio == "combined":
+            env["OMEGAFX_EQUITY_LOG"] = str(LOG_DIR / "demo_combined_equity.csv")
+            env["OMEGAFX_TRADE_LOG"] = str(LOG_DIR / "demo_combined_trades.csv")
         elif portfolio == "v3":
             env["OMEGAFX_EQUITY_LOG"] = str(LOG_DIR / "demo_usdjpy_v3_equity.csv")
             env["OMEGAFX_TRADE_LOG"] = str(LOG_DIR / "demo_usdjpy_v3_trades.csv")
@@ -503,6 +531,15 @@ def start_runner(mode: str, portfolio: str):
         if portfolio == "multi":
             env.setdefault("OMEGAFX_TRADE_LOG", str(LOG_DIR / "shadow_multi_trades.csv"))
             env.setdefault("OMEGAFX_EQUITY_LOG", str(LOG_DIR / "shadow_multi_equity.csv"))
+        elif portfolio == "scorers":
+            env.setdefault("OMEGAFX_TRADE_LOG", str(LOG_DIR / "shadow_scorers_trades.csv"))
+            env.setdefault("OMEGAFX_EQUITY_LOG", str(LOG_DIR / "shadow_scorers_equity.csv"))
+        elif portfolio == "westbrook":
+            env.setdefault("OMEGAFX_TRADE_LOG", str(LOG_DIR / "shadow_westbrook_trades.csv"))
+            env.setdefault("OMEGAFX_EQUITY_LOG", str(LOG_DIR / "shadow_westbrook_equity.csv"))
+        elif portfolio == "combined":
+            env.setdefault("OMEGAFX_TRADE_LOG", str(LOG_DIR / "shadow_combined_trades.csv"))
+            env.setdefault("OMEGAFX_EQUITY_LOG", str(LOG_DIR / "shadow_combined_equity.csv"))
         else:
             env.setdefault("OMEGAFX_TRADE_LOG", str(LOG_DIR / "shadow_fastpass_usdjpy_core.csv"))
             env.setdefault("OMEGAFX_EQUITY_LOG", str(LOG_DIR / "shadow_fastpass_usdjpy_core_equity.csv"))
@@ -581,49 +618,74 @@ def launch_task(name: str, script: Path):
 @app.route("/start", methods=["POST"])
 def start():
     global current_mode, current_portfolio
-    data = request.get_json(force=True, silent=True) or {}
-    mode = data.get("mode", "shadow")
-    portfolio = data.get("portfolio", "core")
-    current_mode, current_portfolio = mode, portfolio
-    clear_heartbeat()
-    _write_state("REQUESTED", mode, portfolio, reason="tip_off")
-    stop_runner("runner restarting")
-    start_runner(mode, portfolio)
-    return jsonify({"ok": True})
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        mode = data.get("mode", "shadow")
+        portfolio = data.get("portfolio", "core")
+        valid_modes = {"shadow", "demo", "ftmo"}
+        valid_portfolios = {"core", "v3", "multi", "scorers", "westbrook", "combined", "exp_v2", "exp_v3", "research"}
+        if mode not in valid_modes:
+            msg = f"invalid mode: {mode}"
+            write_activity(f"API /start reject | {msg}")
+            return jsonify({"ok": False, "error": msg}), 400
+        if portfolio not in valid_portfolios:
+            msg = f"invalid portfolio: {portfolio}"
+            write_activity(f"API /start reject | {msg}")
+            return jsonify({"ok": False, "error": msg}), 400
+        current_mode, current_portfolio = mode, portfolio
+        clear_heartbeat()
+        _write_state("REQUESTED", mode, portfolio, reason="tip_off")
+        write_activity(f"API /start | mode={mode} | portfolio={portfolio} | ip={request.remote_addr}")
+        stop_runner("runner restarting")
+        start_runner(mode, portfolio)
+        return jsonify({"ok": True, "mode": mode, "portfolio": portfolio})
+    except Exception as exc:
+        write_activity(f"API /start error | {exc}")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/stop", methods=["POST"])
 def stop():
-    stop_runner("Stopped by user")
-    return jsonify({"ok": True})
+    try:
+        write_activity(f"API /stop | ip={request.remote_addr}")
+        stop_runner("Stopped by user")
+        return jsonify({"ok": True})
+    except Exception as exc:
+        write_activity(f"API /stop error | {exc}")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/reset_state", methods=["POST"])
 def reset_state():
     global runner_proc, runner_mode, runner_portfolio, last_mode, last_portfolio, last_stop_reason, last_heartbeat, last_heartbeat_equity, current_mode, current_portfolio, runner_active
-    stop_runner("Reset by user")
-    runner_proc = None
-    runner_mode = None
-    runner_portfolio = None
-    last_mode = None
-    last_portfolio = None
-    last_stop_reason = None
-    last_heartbeat = None
-    last_heartbeat_equity = None
-    current_mode = None
-    current_portfolio = None
-    runner_active = False
-    clear_heartbeat()
     try:
-        LAST_STOP_FILE.unlink(missing_ok=True)
-    except Exception:
-        pass
-    try:
-        STATE_FILE.unlink(missing_ok=True)
-    except Exception:
-        pass
-    write_activity("Hard reset invoked")
-    return jsonify({"ok": True})
+        write_activity(f"API /reset_state | ip={request.remote_addr}")
+        stop_runner("Reset by user")
+        runner_proc = None
+        runner_mode = None
+        runner_portfolio = None
+        last_mode = None
+        last_portfolio = None
+        last_stop_reason = None
+        last_heartbeat = None
+        last_heartbeat_equity = None
+        current_mode = None
+        current_portfolio = None
+        runner_active = False
+        clear_heartbeat()
+        try:
+            LAST_STOP_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
+        try:
+            STATE_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
+        write_activity("Hard reset invoked")
+        return jsonify({"ok": True})
+    except Exception as exc:
+        write_activity(f"API /reset_state error | {exc}")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 @app.route("/status")
 def status():
@@ -750,6 +812,8 @@ def status():
             and mt5_trade_allowed is True
             and expected_ok
         )
+        if snapshot.get("research_block_reason"):
+            trading_path_ready = False
 
         if running:
             runner_state = "RUNNING"
@@ -804,9 +868,18 @@ def status():
             "order_send_none_count": snapshot.get("order_send_none_count"),
             "mt5_verified_closed_trades_count": snapshot.get("mt5_verified_closed_trades_count"),
             "mt5_open_positions_count": snapshot.get("mt5_open_positions_count"),
+            "open_positions_scorers": snapshot.get("open_positions_scorers"),
+            "open_positions_westbrook": snapshot.get("open_positions_westbrook"),
+            "open_risk_scorers_pct": snapshot.get("open_risk_scorers_pct"),
+            "open_risk_westbrook_pct": snapshot.get("open_risk_westbrook_pct"),
+            "total_open_risk_pct": snapshot.get("total_open_risk_pct"),
             "log_events_total": snapshot.get("log_events_total"),
             "matched_to_mt5_tickets_count": snapshot.get("matched_to_mt5_tickets_count"),
             "unmatched_shadow_or_log_only_count": snapshot.get("unmatched_shadow_or_log_only_count"),
+            "mt5_verified_closed": snapshot.get("mt5_verified_closed_trades_count"),
+            "mt5_open": snapshot.get("mt5_open_positions_count"),
+            "matched_to_tickets": snapshot.get("matched_to_mt5_tickets_count"),
+            "unmatched": snapshot.get("unmatched_shadow_or_log_only_count"),
             "evidence_tier": evidence_tier,
             "mt5_account_login": identity.get("mt5_account_login"),
             "mt5_account_server": identity.get("mt5_account_server"),
@@ -824,9 +897,23 @@ def status():
             "mt5_tick_time_by_symbol": snapshot.get("mt5_tick_time_by_symbol"),
             "mt5_tick_missing_symbols": snapshot.get("mt5_tick_missing_symbols"),
             "mt5_tick_stale_seconds": snapshot.get("mt5_tick_stale_seconds"),
+            "pass_symbols": snapshot.get("pass_symbols"),
+            "per_trade_risk_pct": snapshot.get("per_trade_risk_pct"),
+            "per_trade_risk_pct_by_strategy": snapshot.get("per_trade_risk_pct_by_strategy"),
+            "daily_loss_cap_pct": snapshot.get("daily_loss_cap_pct"),
+            "soft_daily_stop_pct": snapshot.get("soft_daily_stop_pct"),
+            "hard_daily_stop_pct": snapshot.get("hard_daily_stop_pct"),
+            "max_open_positions": snapshot.get("max_open_positions"),
+            "bucket_caps": snapshot.get("bucket_caps"),
+            "scorers_max_open_positions": snapshot.get("scorers_max_open_positions"),
+            "westbrook_max_open_positions": snapshot.get("westbrook_max_open_positions"),
+            "scorers_open_risk_cap_pct": snapshot.get("scorers_open_risk_cap_pct"),
+            "westbrook_open_risk_cap_pct": snapshot.get("westbrook_open_risk_cap_pct"),
+            "portfolio_open_risk_cap_pct": snapshot.get("portfolio_open_risk_cap_pct"),
             "trading_allowed": trading_allowed,
             "trading_path_ready": trading_path_ready,
             "trading_block_reason": trading_block_reason,
+            "research_block_reason": snapshot.get("research_block_reason"),
             "risk_policy": policy,
             "risk_policy_status": policy_status,
             "risk_policy_age_sec": policy_age,
@@ -841,6 +928,70 @@ def status():
         })
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/phone_summary")
+def phone_summary():
+    try:
+        st = status()
+        st_json = st.get_json() if hasattr(st, "get_json") else {}
+    except Exception:
+        st_json = {}
+    metrics = st_json.get("metrics") or {}
+    mode = st_json.get("mode") or "unknown"
+    portfolio = st_json.get("portfolio") or "unknown"
+    session = f"{mode}/{portfolio}" if mode or portfolio else "unknown"
+    trades = metrics.get("real_trades_today")
+    if trades is None:
+        trades = metrics.get("mt5_deals_today")
+    if trades is None:
+        trades = metrics.get("trades_today", 0)
+    pnl_today = metrics.get("pnl_today_pct", 0.0)
+    total_open_risk_pct = st_json.get("total_open_risk_pct")
+    portfolio_open_risk_cap_pct = st_json.get("portfolio_open_risk_cap_pct")
+    risk_used = None
+    daily_cap = (
+        st_json.get("daily_loss_cap_pct")
+        or st_json.get("soft_daily_stop_pct")
+        or st_json.get("hard_daily_stop_pct")
+    )
+    try:
+        cap_pct = float(daily_cap) * 100.0 if daily_cap is not None else 0.0
+        if cap_pct > 0:
+            if pnl_today is None:
+                risk_used = None
+            elif pnl_today < 0:
+                risk_used = min(100.0, max(0.0, (-pnl_today / cap_pct) * 100.0))
+            else:
+                risk_used = 0.0
+    except Exception:
+        risk_used = None
+    total_risk_used = None
+    try:
+        if total_open_risk_pct is not None and portfolio_open_risk_cap_pct:
+            cap_pct = float(portfolio_open_risk_cap_pct)
+            if cap_pct > 0:
+                total_risk_used = min(100.0, max(0.0, (float(total_open_risk_pct) / cap_pct) * 100.0))
+    except Exception:
+        total_risk_used = None
+    return jsonify({
+        "status": st_json.get("bot_status_effective") or st_json.get("bot_status") or "unknown",
+        "session": session,
+        "trades_today": trades,
+        "scorers_trades_today": metrics.get("scorers_trades_today"),
+        "westbrook_trades_today": metrics.get("westbrook_trades_today"),
+        "trades_today_real": metrics.get("real_trades_today"),
+        "paper_shots_today": metrics.get("paper_shots_today"),
+        "pnl_today": pnl_today,
+        "risk_used": risk_used,
+        "open_positions_scorers": st_json.get("open_positions_scorers"),
+        "open_positions_westbrook": st_json.get("open_positions_westbrook"),
+        "open_risk_scorers_pct": st_json.get("open_risk_scorers_pct"),
+        "open_risk_westbrook_pct": st_json.get("open_risk_westbrook_pct"),
+        "total_open_risk_pct": total_open_risk_pct,
+        "total_risk_used": total_risk_used,
+        "last_trade": metrics.get("last_trade_time"),
+    })
 
 
 @app.route("/diag")
@@ -891,6 +1042,26 @@ def diag():
             and snapshot.get("mt5_trade_allowed") is True
             and expected_ok
         )
+        if snapshot.get("research_block_reason"):
+            trading_path_ready = False
+        decision_trace = snapshot.get("decision_trace") or {}
+        decision_trace_summary = []
+        if isinstance(decision_trace, dict):
+            for player, trace in decision_trace.items():
+                if not isinstance(trace, dict):
+                    continue
+                symbol = trace.get("symbol")
+                gates = ["session_ok", "cooldown_ok", "trend_ok", "momentum_ok", "trigger_ok", "risk_ok"]
+                blocked = None
+                for gate in gates:
+                    if trace.get(gate) is False:
+                        blocked = gate
+                        break
+                label = f"{player} ({symbol})" if symbol else str(player)
+                if blocked:
+                    decision_trace_summary.append(f"{label} blocked: {blocked}=false")
+                else:
+                    decision_trace_summary.append(f"{label} ok")
         return jsonify({
             "state": state,
             "current_mode": effective_mode,
@@ -926,6 +1097,8 @@ def diag():
             "account_snapshot_status": snapshot_status,
             "account_snapshot_age_sec": snapshot_age,
             "account_snapshot_reason": snapshot_reason,
+            "decision_trace": snapshot.get("decision_trace"),
+            "decision_trace_summary": decision_trace_summary,
             "mt5_connected": snapshot.get("mt5_connected"),
             "mt5_trade_allowed": snapshot.get("mt5_trade_allowed"),
             "mt5_terminal_trade_allowed": snapshot.get("mt5_terminal_trade_allowed"),
@@ -953,8 +1126,13 @@ def diag():
             "log_events_total": snapshot.get("log_events_total"),
             "matched_to_mt5_tickets_count": snapshot.get("matched_to_mt5_tickets_count"),
             "unmatched_shadow_or_log_only_count": snapshot.get("unmatched_shadow_or_log_only_count"),
+            "mt5_verified_closed": snapshot.get("mt5_verified_closed_trades_count"),
+            "mt5_open": snapshot.get("mt5_open_positions_count"),
+            "matched_to_tickets": snapshot.get("matched_to_mt5_tickets_count"),
+            "unmatched": snapshot.get("unmatched_shadow_or_log_only_count"),
             "evidence_tier": snapshot.get("evidence_tier") or "practice",
             "trading_path_ready": trading_path_ready,
+            "research_block_reason": snapshot.get("research_block_reason"),
             "ai_enabled": ai_enabled,
             "ai_reason": ai_reason,
             "dynamic_risk_enabled": dynamic_risk_enabled,
@@ -983,21 +1161,48 @@ def diag():
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/research_packet")
+def research_packet():
+    mode, portfolio = _current_mode_portfolio()
+    if portfolio != "research":
+        return jsonify({
+            "message": "Research packet only exists when Lineup = Research (Sandbox).",
+            "mode": mode,
+            "portfolio": portfolio,
+        })
+    data = _read_json_file(RESEARCH_PACKET_FILE)
+    if not data:
+        return jsonify({"error": "research_packet.json missing"}), 404
+    return jsonify(data)
+
+
 @app.route("/daily_summary")
 def daily_summary():
+    portfolio = runner_portfolio or "core"
+    if portfolio == "multi":
+        symbols = ["USDJPY", "GBPJPY", "EURUSD", "GBPUSD", "AUDUSD", "USDCAD"]
+    elif portfolio in {"scorers", "combined"}:
+        symbols = ["USDJPY", "GBPJPY", "EURUSD", "GBPUSD"]
+    else:
+        symbols = ["USDJPY"]
     return jsonify({
         "trades_today": 0,
         "pnl_today_pct": 0.0,
         "max_dd_today_pct": 0.0,
         "guardrail_hits": 0,
-        "symbols": ["USDJPY", "GBPJPY"] if runner_portfolio == "multi" else ["USDJPY"],
+        "symbols": symbols,
     })
 
 
 @app.route("/config_snapshot")
 def config_snapshot():
     portfolio = runner_portfolio or "core"
-    symbols = ["USDJPY", "GBPJPY"] if portfolio == "multi" else ["USDJPY"]
+    if portfolio == "multi":
+        symbols = ["USDJPY", "GBPJPY", "EURUSD", "GBPUSD", "AUDUSD", "USDCAD"]
+    elif portfolio in {"scorers", "combined"}:
+        symbols = ["USDJPY", "GBPJPY", "EURUSD", "GBPUSD"]
+    else:
+        symbols = ["USDJPY"]
     return jsonify({
         "mode": runner_mode or "shadow",
         "portfolio": portfolio,
@@ -1019,74 +1224,170 @@ def tasks():
 
 @app.route("/run_ftmo", methods=["POST"])
 def run_ftmo():
-    launch_task("ftmo", Path("scripts/run_ftmo_usdjpy_v3_full_pipeline_mt5.py").name)
-    return jsonify({"ok": True})
+    try:
+        if not launch_task("ftmo", Path("scripts/run_ftmo_usdjpy_v3_full_pipeline_mt5.py").name):
+            msg = "ftmo script missing"
+            write_activity(f"API /run_ftmo reject | {msg}")
+            return jsonify({"ok": False, "error": msg}), 404
+        write_activity(f"API /run_ftmo | ip={request.remote_addr}")
+        return jsonify({"ok": True})
+    except Exception as exc:
+        write_activity(f"API /run_ftmo error | {exc}")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/run_ftmo_multi", methods=["POST"])
 def run_ftmo_multi():
-    launch_task("ftmo_multi", Path("scripts/run_ftmo_multi_usdjpy_gbpjpy_full_pipeline_mt5.py").name)
-    return jsonify({"ok": True})
+    try:
+        if not launch_task("ftmo_multi", Path("scripts/run_ftmo_multi_usdjpy_gbpjpy_full_pipeline_mt5.py").name):
+            msg = "ftmo multi script missing"
+            write_activity(f"API /run_ftmo_multi reject | {msg}")
+            return jsonify({"ok": False, "error": msg}), 404
+        write_activity(f"API /run_ftmo_multi | ip={request.remote_addr}")
+        return jsonify({"ok": True})
+    except Exception as exc:
+        write_activity(f"API /run_ftmo_multi error | {exc}")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/run_ftmo_exp", methods=["POST"])
 def run_ftmo_exp():
-    launch_task("ftmo_exp", Path("scripts/run_ftmo_usdjpy_exp_v2_full_pipeline_mt5.py").name)
-    return jsonify({"ok": True})
+    try:
+        if not launch_task("ftmo_exp", Path("scripts/run_ftmo_usdjpy_exp_v2_full_pipeline_mt5.py").name):
+            msg = "ftmo exp script missing"
+            write_activity(f"API /run_ftmo_exp reject | {msg}")
+            return jsonify({"ok": False, "error": msg}), 404
+        write_activity(f"API /run_ftmo_exp | ip={request.remote_addr}")
+        return jsonify({"ok": True})
+    except Exception as exc:
+        write_activity(f"API /run_ftmo_exp error | {exc}")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/run_ftmo_exp_multi", methods=["POST"])
 def run_ftmo_exp_multi():
-    launch_task("ftmo_exp_multi", Path("scripts/run_ftmo_multi_usdjpy_exp_v2_full_pipeline_mt5.py").name)
-    return jsonify({"ok": True})
+    try:
+        if not launch_task("ftmo_exp_multi", Path("scripts/run_ftmo_multi_usdjpy_exp_v2_full_pipeline_mt5.py").name):
+            msg = "ftmo exp multi script missing"
+            write_activity(f"API /run_ftmo_exp_multi reject | {msg}")
+            return jsonify({"ok": False, "error": msg}), 404
+        write_activity(f"API /run_ftmo_exp_multi | ip={request.remote_addr}")
+        return jsonify({"ok": True})
+    except Exception as exc:
+        write_activity(f"API /run_ftmo_exp_multi error | {exc}")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/run_ftmo_exp_v3", methods=["POST"])
 def run_ftmo_exp_v3():
-    launch_task("ftmo_exp_v3", Path("scripts/demo_ftmo_usdjpy_exp_v3_full_pipeline_mt5.py").name)
-    return jsonify({"ok": True})
+    try:
+        if not launch_task("ftmo_exp_v3", Path("scripts/demo_ftmo_usdjpy_exp_v3_full_pipeline_mt5.py").name):
+            msg = "ftmo exp v3 script missing"
+            write_activity(f"API /run_ftmo_exp_v3 reject | {msg}")
+            return jsonify({"ok": False, "error": msg}), 404
+        write_activity(f"API /run_ftmo_exp_v3 | ip={request.remote_addr}")
+        return jsonify({"ok": True})
+    except Exception as exc:
+        write_activity(f"API /run_ftmo_exp_v3 error | {exc}")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/run_ftmo_exp_v3_multi", methods=["POST"])
 def run_ftmo_exp_v3_multi():
-    launch_task("ftmo_exp_v3_multi", Path("scripts/demo_ftmo_multi_usdjpy_exp_v3_full_pipeline_mt5.py").name)
-    return jsonify({"ok": True})
+    try:
+        if not launch_task("ftmo_exp_v3_multi", Path("scripts/demo_ftmo_multi_usdjpy_exp_v3_full_pipeline_mt5.py").name):
+            msg = "ftmo exp v3 multi script missing"
+            write_activity(f"API /run_ftmo_exp_v3_multi reject | {msg}")
+            return jsonify({"ok": False, "error": msg}), 404
+        write_activity(f"API /run_ftmo_exp_v3_multi | ip={request.remote_addr}")
+        return jsonify({"ok": True})
+    except Exception as exc:
+        write_activity(f"API /run_ftmo_exp_v3_multi error | {exc}")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/run_exp_optimizer", methods=["POST"])
 def run_exp_optimizer():
-    launch_task("exp_opt", Path("scripts/demo_optimize_usdjpy_exp_v2_risk_mt5.py").name)
-    return jsonify({"ok": True})
+    try:
+        if not launch_task("exp_opt", Path("scripts/demo_optimize_usdjpy_exp_v2_risk_mt5.py").name):
+            msg = "exp optimizer script missing"
+            write_activity(f"API /run_exp_optimizer reject | {msg}")
+            return jsonify({"ok": False, "error": msg}), 404
+        write_activity(f"API /run_exp_optimizer | ip={request.remote_addr}")
+        return jsonify({"ok": True})
+    except Exception as exc:
+        write_activity(f"API /run_exp_optimizer error | {exc}")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/run_exp_v2_kd_primary_optimizer", methods=["POST"])
 def run_exp_v2_kd_primary_optimizer():
-    launch_task("exp_opt_kd", Path("scripts/demo_optimize_usdjpy_exp_v2_kd_primary_mt5.py").name)
-    return jsonify({"ok": True})
+    try:
+        if not launch_task("exp_opt_kd", Path("scripts/demo_optimize_usdjpy_exp_v2_kd_primary_mt5.py").name):
+            msg = "exp v2 kd optimizer script missing"
+            write_activity(f"API /run_exp_v2_kd_primary_optimizer reject | {msg}")
+            return jsonify({"ok": False, "error": msg}), 404
+        write_activity(f"API /run_exp_v2_kd_primary_optimizer | ip={request.remote_addr}")
+        return jsonify({"ok": True})
+    except Exception as exc:
+        write_activity(f"API /run_exp_v2_kd_primary_optimizer error | {exc}")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/run_exp_v3_optimizer", methods=["POST"])
 def run_exp_v3_optimizer():
-    launch_task("exp_opt_v3", Path("scripts/demo_optimize_usdjpy_exp_v3_risk_mt5.py").name)
-    return jsonify({"ok": True})
+    try:
+        if not launch_task("exp_opt_v3", Path("scripts/demo_optimize_usdjpy_exp_v3_risk_mt5.py").name):
+            msg = "exp v3 optimizer script missing"
+            write_activity(f"API /run_exp_v3_optimizer reject | {msg}")
+            return jsonify({"ok": False, "error": msg}), 404
+        write_activity(f"API /run_exp_v3_optimizer | ip={request.remote_addr}")
+        return jsonify({"ok": True})
+    except Exception as exc:
+        write_activity(f"API /run_exp_v3_optimizer error | {exc}")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/run_exp_v3_fastwindows", methods=["POST"])
 def run_exp_v3_fastwindows():
-    launch_task("exp_v3_fw", Path("scripts/demo_fastpass_usdjpy_exp_v3_fastwindows_mt5.py").name)
-    return jsonify({"ok": True})
+    try:
+        if not launch_task("exp_v3_fw", Path("scripts/demo_fastpass_usdjpy_exp_v3_fastwindows_mt5.py").name):
+            msg = "exp v3 fastwindows script missing"
+            write_activity(f"API /run_exp_v3_fastwindows reject | {msg}")
+            return jsonify({"ok": False, "error": msg}), 404
+        write_activity(f"API /run_exp_v3_fastwindows | ip={request.remote_addr}")
+        return jsonify({"ok": True})
+    except Exception as exc:
+        write_activity(f"API /run_exp_v3_fastwindows error | {exc}")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/run_research", methods=["POST"])
 def run_research():
-    launch_task("research", Path("scripts/report_fastpass_research.py").name)
-    return jsonify({"ok": True})
+    try:
+        if not launch_task("research", Path("scripts/report_fastpass_research.py").name):
+            msg = "research script missing"
+            write_activity(f"API /run_research reject | {msg}")
+            return jsonify({"ok": False, "error": msg}), 404
+        write_activity(f"API /run_research | ip={request.remote_addr}")
+        return jsonify({"ok": True})
+    except Exception as exc:
+        write_activity(f"API /run_research error | {exc}")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/run_gbpjpy_test", methods=["POST"])
 def run_gbpjpy_test():
-    launch_task("gbpjpy", Path("scripts/demo_fastpass_gbpjpy_core_fastwindows_mt5.py").name)
-    return jsonify({"ok": True})
+    try:
+        if not launch_task("gbpjpy", Path("scripts/demo_fastpass_gbpjpy_core_fastwindows_mt5.py").name):
+            msg = "gbpjpy test script missing"
+            write_activity(f"API /run_gbpjpy_test reject | {msg}")
+            return jsonify({"ok": False, "error": msg}), 404
+        write_activity(f"API /run_gbpjpy_test | ip={request.remote_addr}")
+        return jsonify({"ok": True})
+    except Exception as exc:
+        write_activity(f"API /run_gbpjpy_test error | {exc}")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/download_ftmo_json")
@@ -1109,31 +1410,41 @@ def download_demo_log():
 def apply_exp_v2_config():
     src = REPORTS_DIR / "optimize_usdjpy_exp_v2_risk.json"
     if not src.exists():
-        return jsonify({"error": "optimizer file missing"}), 400
+        msg = "optimizer file missing"
+        write_activity(f"API /apply_exp_v2_config reject | {msg}")
+        return jsonify({"ok": False, "error": msg}), 400
     try:
         data = json.loads(src.read_text(encoding="utf-8"))
         top = (data.get("results") or data)[0]
         (REPORTS_DIR / "exp_v2_selected_config.json").write_text(json.dumps(top, indent=2), encoding="utf-8")
+        write_activity(f"API /apply_exp_v2_config | ip={request.remote_addr}")
         return jsonify({"ok": True})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        write_activity(f"API /apply_exp_v2_config error | {exc}")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/apply_exp_v3_config", methods=["POST"])
 def apply_exp_v3_config():
     src = REPORTS_DIR / "optimize_usdjpy_exp_v3_risk.json"
     if not src.exists():
-        return jsonify({"error": "optimizer file missing"}), 400
+        msg = "optimizer file missing"
+        write_activity(f"API /apply_exp_v3_config reject | {msg}")
+        return jsonify({"ok": False, "error": msg}), 400
     try:
         data = json.loads(src.read_text(encoding="utf-8"))
         top_list = data.get("results") or data
         if not top_list:
-            return jsonify({"error": "no optimizer rows"}), 400
+            msg = "no optimizer rows"
+            write_activity(f"API /apply_exp_v3_config reject | {msg}")
+            return jsonify({"ok": False, "error": msg}), 400
         top = top_list[0]
         (REPORTS_DIR / "exp_v3_selected_config.json").write_text(json.dumps(top, indent=2), encoding="utf-8")
+        write_activity(f"API /apply_exp_v3_config | ip={request.remote_addr}")
         return jsonify({"ok": True})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        write_activity(f"API /apply_exp_v3_config error | {exc}")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/optimizer")
@@ -1232,14 +1543,35 @@ def _player_name(profile_name: str) -> str:
     mapping = {
         "USDJPY_M15_LondonBreakout_V1": "Curry",
         "GBPJPY_M15_LondonBreakout_V1": "Klay",
+        "EURUSD_M15_LondonBreakout_V1": "Curry",
+        "GBPUSD_M15_LondonBreakout_V1": "Klay",
         "USDJPY_H1_BigMan_V1": "Big Man",
         "USDJPY_M15_VanVleet_V1": "VanVleet",
         "USDJPY_M15_LiquiditySweep_V1": "Kawhi",
         "GBPJPY_M15_LiquiditySweep_V1": "Kawhi (GBP)",
-        "USDJPY_M5_MomentumPinball_V1": "Westbrook (bench)",
+        "EURUSD_M15_LiquiditySweep_V1": "Kawhi",
+        "GBPUSD_M15_LiquiditySweep_V1": "Kawhi",
+        "USDJPY_M5_MomentumPinball_V1": "Westbrook",
         "USDJPY_M15_TrendKD_V1": "KD",
+        "AUDUSD_M15_NYTrendPullback_V1": "NY Pullback",
+        "USDCAD_M15_NYTrendPullback_V1": "NY Pullback",
     }
     return mapping.get(profile_name, profile_name)
+
+
+def _parse_comment_tags(comment: str) -> Dict[str, str]:
+    tags: Dict[str, str] = {}
+    if not comment:
+        return tags
+    for part in comment.split("|"):
+        if "=" not in part:
+            continue
+        key, val = part.split("=", 1)
+        key = key.strip().upper()
+        val = val.strip()
+        if key in {"EDGE", "PLAY", "ACCT", "LINEUP"} and val:
+            tags[key] = val
+    return tags
 
 
 def _current_mode_portfolio():
@@ -1296,10 +1628,22 @@ def _trade_log_path():
     if mode == "demo":
         if portfolio == "multi":
             return LOG_DIR / "demo_multi_trades.csv"
+        if portfolio == "scorers":
+            return LOG_DIR / "demo_scorers_trades.csv"
+        if portfolio == "westbrook":
+            return LOG_DIR / "demo_westbrook_trades.csv"
+        if portfolio == "combined":
+            return LOG_DIR / "demo_combined_trades.csv"
         return LOG_DIR / "demo_usdjpy_v3_trades.csv"
     if mode == "shadow":
         if portfolio == "multi":
             return LOG_DIR / "shadow_multi_trades.csv"
+        if portfolio == "scorers":
+            return LOG_DIR / "shadow_scorers_trades.csv"
+        if portfolio == "westbrook":
+            return LOG_DIR / "shadow_westbrook_trades.csv"
+        if portfolio == "combined":
+            return LOG_DIR / "shadow_combined_trades.csv"
         return LOG_DIR / "shadow_fastpass_usdjpy_core.csv"
     # ftmo/live fallback
     return LOG_DIR / "live_trades.csv"
@@ -1310,13 +1654,51 @@ def _equity_log_path():
     if mode == "demo":
         if portfolio == "multi":
             return LOG_DIR / "demo_multi_equity.csv"
+        if portfolio == "scorers":
+            return LOG_DIR / "demo_scorers_equity.csv"
+        if portfolio == "westbrook":
+            return LOG_DIR / "demo_westbrook_equity.csv"
+        if portfolio == "combined":
+            return LOG_DIR / "demo_combined_equity.csv"
         return LOG_DIR / "demo_usdjpy_v3_equity.csv"
     if mode == "shadow":
         if portfolio == "multi":
             return LOG_DIR / "shadow_multi_equity.csv"
+        if portfolio == "scorers":
+            return LOG_DIR / "shadow_scorers_equity.csv"
+        if portfolio == "westbrook":
+            return LOG_DIR / "shadow_westbrook_equity.csv"
+        if portfolio == "combined":
+            return LOG_DIR / "shadow_combined_equity.csv"
         return LOG_DIR / "shadow_fastpass_usdjpy_core_equity.csv"
     # ftmo/live fallback
     return LOG_DIR / "live_equity.csv"
+
+
+def _read_paper_shots_for_today():
+    import csv
+    from collections import deque
+
+    if not PAPER_SHOTS_LOG.exists():
+        return 0, {}
+    today = time.strftime("%Y-%m-%d")
+    total = 0
+    by_edge: Dict[str, int] = {}
+    try:
+        with open(PAPER_SHOTS_LOG, newline="") as f:
+            reader = csv.DictReader(f)
+            dq = deque(reader, maxlen=1000)
+        for r in dq:
+            ts = r.get("entry_time") or r.get("timestamp_utc") or ""
+            if today not in ts:
+                continue
+            total += 1
+            edge = r.get("player") or r.get("edge_tag") or r.get("profile_name")
+            if edge:
+                by_edge[edge] = by_edge.get(edge, 0) + 1
+    except Exception:
+        return 0, {}
+    return total, by_edge
 
 
 def _read_trades_for_today():
@@ -1344,6 +1726,13 @@ def _read_trades_for_today():
 
     metrics = {
         "trades_today": 0,
+        "signals_today": 0,
+        "mt5_deals_today": 0,
+        "real_trades_today": 0,
+        "scorers_trades_today": 0,
+        "westbrook_trades_today": 0,
+        "paper_shots_today": 0,
+        "paper_shots_by_edge": {},
         "wins_today": 0,
         "losses_today": 0,
         "pnl_today_pct": 0.0,
@@ -1367,6 +1756,9 @@ def _read_trades_for_today():
         "trades_by_symbol": {},
         "pnl_by_symbol": {},
     }
+    paper_total, paper_by_edge = _read_paper_shots_for_today()
+    metrics["paper_shots_today"] = paper_total
+    metrics["paper_shots_by_edge"] = paper_by_edge
     if not path.exists():
         return rows, metrics
     if not rows:
@@ -1382,7 +1774,23 @@ def _read_trades_for_today():
     streak_player = {}
     streak_symbol = {}
 
+    executed_rows = []
     for r in rows:
+        stage = (r.get("stage") or "").upper()
+        has_ticket = bool(
+            r.get("mt5_deal_ticket")
+            or r.get("mt5_position_ticket")
+            or r.get("ticket_id")
+            or r.get("ticket")
+        )
+        executed = stage in {"DEAL_EXECUTED", "POSITION_OPENED"} or (not stage and has_ticket)
+        if stage == "SIGNAL":
+            metrics["signals_today"] += 1
+        if executed:
+            metrics["mt5_deals_today"] += 1
+            executed_rows.append(r)
+        else:
+            continue
         pnl = float(r.get("pnl", 0) or 0)
         eq_after = r.get("equity_after")
         try:
@@ -1398,6 +1806,18 @@ def _read_trades_for_today():
         metrics["trades_today"] += 1
         player = _player_name(r.get("profile_name") or "")
         sym = r.get("symbol")
+        comment = r.get("comment") or r.get("mt5_comment") or ""
+        tags = _parse_comment_tags(comment)
+        lineup_tag = (tags.get("LINEUP") or "").upper()
+        if not lineup_tag:
+            if player == "Westbrook":
+                lineup_tag = "W"
+            elif player in {"Curry", "Klay"}:
+                lineup_tag = "S"
+        if lineup_tag == "W":
+            metrics["westbrook_trades_today"] += 1
+        elif lineup_tag == "S":
+            metrics["scorers_trades_today"] += 1
 
         # streaks
         if pnl < 0:
@@ -1431,6 +1851,7 @@ def _read_trades_for_today():
     metrics["symbols_today"] = sorted(symbols)
     metrics["start_equity_today"] = start_eq if start_eq is not None else 0.0
     metrics["end_equity_today"] = last_eq if last_eq is not None else 0.0
+    metrics["real_trades_today"] = metrics["mt5_deals_today"]
     if start_eq and last_eq is not None:
         metrics["pnl_today_pct"] = ((last_eq - start_eq) / start_eq) * 100.0
     if start_eq and min_eq is not None:
@@ -1440,7 +1861,7 @@ def _read_trades_for_today():
     metrics["losing_streak_by_player"] = streak_player
     metrics["losing_streak_by_symbol"] = streak_symbol
 
-    return rows, metrics
+    return executed_rows, metrics
 
 
 def _equity_stats_today() -> Dict[str, Optional[float]]:
@@ -1562,6 +1983,8 @@ def recent_trades():
                 "exit_price": r.get("exit_price") or "",
                 "pnl_pct": pnl_pct,
                 "equity_after_trade": eq_after,
+                "stage": r.get("stage") or "",
+                "execution_label": r.get("execution_label") or "",
             })
     except Exception as exc:
         try:
@@ -1811,9 +2234,11 @@ def ai_query():
     """
     if client is None:
         detail = "OPENAI_API_KEY is missing." if not OPENAI_API_KEY else "openai package is not installed."
+        write_activity(f"API /ai_query reject | {detail}")
         return jsonify({
             "answer": f"AI backend not configured: {detail}",
-            "error": "ai_not_configured"
+            "error": "ai_not_configured",
+            "ok": False,
         }), 500
 
     data = request.get_json(force=True, silent=True) or {}
@@ -1821,9 +2246,11 @@ def ai_query():
     ai_ctx = data.get("ai_context") or {}
 
     if not user_message:
+        write_activity("API /ai_query reject | empty message")
         return jsonify({
             "answer": "Please ask a question or describe what you want me to analyze.",
-            "error": "empty_message"
+            "error": "empty_message",
+            "ok": False,
         }), 400
 
     try:
@@ -1833,12 +2260,14 @@ def ai_query():
         st_json = {}
     if (st_json.get("matched_to_mt5_tickets_count") or 0) == 0:
         tier = st_json.get("evidence_tier") or "practice"
+        write_activity(f"API /ai_query reject | insufficient_evidence tier={tier}")
         return jsonify({
             "answer": (
                 "AI disabled for roster/risk calls: evidence tier is "
                 f"{tier.upper()} (no MT5-verified trades)."
             ),
             "error": "insufficient_evidence",
+            "ok": False,
         }), 403
 
     if not ai_ctx:
@@ -1866,11 +2295,14 @@ def ai_query():
             temperature=0.25,
         )
         answer = completion.choices[0].message.content
-        return jsonify({"answer": answer})
+        write_activity("API /ai_query | ok")
+        return jsonify({"answer": answer, "ok": True})
     except Exception as e:
+        write_activity(f"API /ai_query error | {e}")
         return jsonify({
             "answer": "I ran into an error while calling the AI backend. Please check the server logs.",
             "error": str(e),
+            "ok": False,
         }), 500
 
 

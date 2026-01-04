@@ -5,11 +5,33 @@ from pathlib import Path
 def load_ohlc_csv(path: Path, timeframe: str, tz: str = "UTC") -> pd.DataFrame:
     """
     Load OHLCV from CSV with columns: time, open, high, low, close, volume.
+    Supports MT5 export format with <DATE> and <TIME> columns (tab-delimited).
     - Parses time to datetime (tz-aware).
     - Sets index to UTC timestamp.
-    - Resamples to requested timeframe if needed (supports M1, M5, M15, H1).
+    - Resamples to requested timeframe if needed (supports M1, M5, M15, H1, H4, D1).
     """
-    df = pd.read_csv(path)
+    sep = ","
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            header = f.readline()
+        if "\t" in header:
+            sep = "\t"
+        elif ";" in header and "," not in header:
+            sep = ";"
+    except OSError:
+        pass
+    df = pd.read_csv(path, sep=sep)
+    # normalize column names
+    def _norm(col: str) -> str:
+        return col.strip().strip("<>").lower()
+    df.columns = [_norm(c) for c in df.columns]
+    if "time" not in df.columns:
+        if "timestamp" in df.columns:
+            df["time"] = df["timestamp"]
+        elif "date" in df.columns and "time" in df.columns:
+            df["time"] = df["date"].astype(str) + " " + df["time"].astype(str)
+        elif "date" in df.columns and "time" not in df.columns:
+            df["time"] = df["date"]
     if "time" not in df.columns:
         raise ValueError("CSV must contain a 'time' column.")
     df["time"] = pd.to_datetime(df["time"])
@@ -18,8 +40,16 @@ def load_ohlc_csv(path: Path, timeframe: str, tz: str = "UTC") -> pd.DataFrame:
         df.index = df.index.tz_localize(tz)
     else:
         df.index = df.index.tz_convert(tz)
-
-    base = df[["open", "high", "low", "close", "volume"]].sort_index()
+    volume_col = None
+    for cand in ("volume", "tickvol", "vol"):
+        if cand in df.columns:
+            volume_col = cand
+            break
+    if volume_col is None:
+        df["volume"] = 0.0
+        volume_col = "volume"
+    base = df[["open", "high", "low", "close", volume_col]].sort_index()
+    base.columns = ["open", "high", "low", "close", "volume"]
 
     def resample_tf(df_in, rule):
         o = df_in["open"].resample(rule).first()
@@ -36,17 +66,31 @@ def load_ohlc_csv(path: Path, timeframe: str, tz: str = "UTC") -> pd.DataFrame:
         "M5": "5min",
         "M15": "15min",
         "H1": "1h",
+        "H4": "4h",
+        "D1": "1d",
         "1m": "1min",
         "5m": "5min",
         "15m": "15min",
         "60m": "1h",
+        "4h": "4h",
+        "1d": "1d",
     }
     rule = tf_map.get(timeframe, None)
     if rule is None:
         raise ValueError(f"Unsupported timeframe {timeframe}")
 
-    # If base is already M1, resample up as needed
-    return resample_tf(base, rule) if rule != "1min" else base
+    if rule != "1min":
+        try:
+            diffs = base.index.to_series().diff().dropna()
+            if not diffs.empty:
+                target = pd.to_timedelta(rule)
+                median_delta = diffs.median()
+                if abs(median_delta - target) <= pd.Timedelta(seconds=1):
+                    return base
+        except Exception:
+            pass
+        return resample_tf(base, rule)
+    return base
 
 
 # Legacy stubs for compatibility with existing imports

@@ -152,6 +152,38 @@
     .bot-banner.ok { color: var(--accent); }
     .bot-banner.warn { color: var(--warn); }
     .bot-banner.err { color: var(--error); }
+    .action-banner {
+      margin: 0 0 12px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: #101a2f;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+    }
+    .action-banner.ok { color: var(--accent); }
+    .action-banner.warn { color: var(--warn); }
+    .action-banner.err { color: var(--error); }
+    .toast-wrap {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      display: grid;
+      gap: 8px;
+      z-index: 9999;
+    }
+    .toast {
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid #23314f;
+      background: #0f1b33;
+      font-size: 12px;
+      color: var(--ink);
+      box-shadow: 0 8px 22px rgba(10, 18, 36, 0.45);
+    }
+    .toast.ok { color: var(--accent); border-color: #1f5b40; }
+    .toast.warn { color: var(--warn); border-color: #5a4c1f; }
+    .toast.err { color: var(--error); border-color: #5a1f1f; }
     .grid {
       display: grid;
       grid-template-columns: 280px minmax(520px, 1fr) 360px;
@@ -298,6 +330,7 @@
           <div>Omega-FX</div>
           <div id="account-identity" style="font-size:12px; color:var(--muted);">Account: UNKNOWN</div>
           <div id="mt5-details" style="font-size:11px; color:var(--muted);">MT5: UNKNOWN</div>
+          <div id="pass-symbols" style="font-size:11px; color:var(--muted);">PASS Symbols: -</div>
         </div>
       </div>
       <div class="top-metrics">
@@ -331,27 +364,33 @@
     </div>
 
     <div id="bot-status-banner" class="bot-banner warn">BOT: ?</div>
+    <div id="action-banner" class="action-banner" style="display:none;"></div>
 
     <div class="control-bar">
       <div class="controls">
-        <label>Game Mode:
+        <label id="mode-label">Game Mode:
           <select id="mode-select">
             <option value="shadow">Shadow</option>
             <option value="demo">Demo</option>
             <option value="ftmo">FTMO</option>
           </select>
         </label>
-        <label>Lineup Selector:
+        <label id="portfolio-label">Lineup Selector:
           <select id="portfolio-select">
             <option value="core">Curry Lineup (Core)</option>
             <option value="v3">Curry Lineup (V3)</option>
             <option value="multi">Splash Brothers Lineup (Multi)</option>
+            <option value="scorers">Scorers (Curry/Klay)</option>
+            <option value="westbrook">Westbrook (Scalper)</option>
+            <option value="combined">Combined (Scorers + Westbrook)</option>
+            <option value="research">Research (Sandbox)</option>
           </select>
         </label>
         <span id="mode-lock-note" class="badge warn" style="display:none;">locked while ARMED</span>
         <button class="btn-start" id="start-btn" onclick="startBot()">Enable Bot</button>
         <button class="btn-stop" onclick="stopBot()">Disable Bot</button>
         <button class="btn-ghost" id="reset-btn">Hard Reset State</button>
+        <button class="btn-ghost" id="research-packet-btn" onclick="openResearchPacket()">Research Packet</button>
         <span id="stop-reason" class="badge warn" style="display:none;"></span>
       </div>
     </div>
@@ -487,17 +526,38 @@
       simpleBtn.onclick = () => {
         advView.classList.add('hidden');
         if (viewLabel) viewLabel.textContent = 'Simple View';
+        showToast('View switched: Simple', 'ok');
       };
       advancedBtn.onclick = () => {
         advView.classList.remove('hidden');
         if (viewLabel) viewLabel.textContent = 'Advanced View';
+        showToast('View switched: Advanced', 'ok');
       };
     }
 
     if (resetBtn) {
       resetBtn.onclick = async () => {
-        await fetch('/reset_state', {method:'POST'});
+        showToast('Sending: hard reset...', 'warn');
+        try {
+          await fetchJson('/reset_state', {method:'POST'});
+          showToast('Hard reset: success', 'ok');
+        } catch (e) {
+          showToast(`Hard reset: error ${e.message}`, 'err', 4500);
+        }
       };
+    }
+
+    const modeSelectEl = document.getElementById('mode-select');
+    const portfolioSelectEl = document.getElementById('portfolio-select');
+    if (modeSelectEl) {
+      modeSelectEl.addEventListener('change', () => {
+        showToast(`Mode selected: ${modeSelectEl.value}`, 'ok');
+      });
+    }
+    if (portfolioSelectEl) {
+      portfolioSelectEl.addEventListener('change', () => {
+        showToast(`Lineup selected: ${portfolioSelectEl.value}`, 'ok');
+      });
     }
 
     function setBadge(el, text, state) {
@@ -507,6 +567,34 @@
       if (state === true || state === 'ok') cls = 'ok';
       else if (state === 'err') cls = 'err';
       el.className = `badge ${cls}`;
+    }
+
+    function showToast(message, level='warn', ttl=3500) {
+      const wrap = document.getElementById('toast-wrap');
+      if (!wrap) return;
+      const toast = document.createElement('div');
+      toast.className = `toast ${level}`;
+      toast.textContent = message;
+      wrap.appendChild(toast);
+      setTimeout(() => {
+        toast.remove();
+      }, ttl);
+    }
+
+    function showActionBanner(message, level='err') {
+      const banner = document.getElementById('action-banner');
+      if (!banner) return;
+      banner.textContent = message;
+      banner.className = `action-banner ${level}`;
+      banner.style.display = 'block';
+    }
+
+    function clearActionBanner() {
+      const banner = document.getElementById('action-banner');
+      if (!banner) return;
+      banner.textContent = '';
+      banner.style.display = 'none';
+      banner.className = 'action-banner';
     }
 
     function formatAge(seconds) {
@@ -524,6 +612,11 @@
       if (hours < 24) return `${hours}h`;
       const days = Math.round(hours / 24);
       return `${days}d`;
+    }
+
+    function formatPct(val, digits = 2) {
+      if (val == null || Number.isNaN(val)) return 'UNKNOWN';
+      return `${(val * 100).toFixed(digits)}%`;
     }
 
     function buildIdentityLabel(identity, status, reason) {
@@ -561,24 +654,69 @@
 
     async function fetchJson(url, opts={}) {
       const res = await fetch(url, opts);
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
+      let text = '';
+      try {
+        text = await res.text();
+      } catch (e) {
+        text = '';
+      }
+      let data = null;
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          data = null;
+        }
+      }
+      if (!res.ok) {
+        const msg = (data && data.error) ? data.error : (text || res.statusText);
+        throw new Error(msg || 'Request failed');
+      }
+      if (data && typeof data === 'object' && data.ok === false) {
+        throw new Error(data.error || 'Request failed');
+      }
+      return data !== null ? data : {};
     }
 
     async function startBot() {
       const lockStatus = ((lastStatus && lastStatus.identity_lock_status) || 'unknown').toLowerCase();
       if (lockStatus && lockStatus !== 'ok') {
         const reason = lastStatus.identity_lock_reason || '';
-        alert(`BOT LOCKED: ${reason || lockStatus}`);
+        showToast(`BOT LOCKED: ${reason || lockStatus}`, 'err', 4500);
         return;
       }
       const mode = document.getElementById('mode-select').value;
       const portfolio = document.getElementById('portfolio-select').value;
-      await fetchJson('/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode, portfolio})});
+      showToast('Sending: enable bot...', 'warn');
+      try {
+        await fetchJson('/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode, portfolio})});
+        showToast('Enable bot: success', 'ok');
+        clearActionBanner();
+      } catch (e) {
+        showToast(`Enable bot: error ${e.message}`, 'err', 4500);
+      }
     }
 
     async function stopBot() {
-      await fetchJson('/stop', {method:'POST'});
+      showToast('Sending: disable bot...', 'warn');
+      try {
+        await fetchJson('/stop', {method:'POST'});
+        showToast('Disable bot: success', 'ok');
+      } catch (e) {
+        showToast(`Disable bot: error ${e.message}`, 'err', 4500);
+      }
+    }
+
+    function openResearchPacket() {
+      const portfolio = (lastStatus && lastStatus.portfolio) || '';
+      if (String(portfolio).toLowerCase() !== 'research') {
+        showActionBanner('You are in MULTI. Disable Bot -> switch to Research -> restart runner.');
+        showToast('Research packet blocked: lineup is not Research', 'err', 4500);
+        return;
+      }
+      clearActionBanner();
+      showToast('Opening research packet...', 'ok');
+      window.open('/research_packet', '_blank');
     }
 
     function setGauge(id, value, maxAbs) {
@@ -652,7 +790,7 @@
       return `<div class="latest-trades">
         ${sorted.map(t => `
           <div class="play-item">
-            <strong>${t.timestamp || ''}</strong> | ${t.symbol || ''} | ${t.strategy_name_friendly || t.strategy_id || ''} ${t.side || ''} | ${typeof t.pnl_pct === 'number' ? t.pnl_pct.toFixed(4)+'%' : '0%'}
+            <strong>${t.timestamp || ''}</strong> | ${(t.stage ? `[${t.stage}] ` : '')}${t.symbol || ''} | ${t.strategy_name_friendly || t.strategy_id || ''} ${t.side || ''} | ${typeof t.pnl_pct === 'number' ? t.pnl_pct.toFixed(4)+'%' : '0%'}
           </div>`).join('')}
       </div>`;
     }
@@ -759,6 +897,10 @@
       } catch (e) {}
       lastTrades = recent;
       lastStatus = status || {};
+      const activePortfolio = String(status.portfolio || '').toLowerCase();
+      if (activePortfolio === 'research') {
+        clearActionBanner();
+      }
 
       // top bar
       const balanceEl = document.getElementById('account-balance');
@@ -769,6 +911,11 @@
       const identityEl = document.getElementById('account-identity');
       if (identityEl) identityEl.textContent = buildIdentityLabel(identity, identityStatus, identityReason);
       document.title = buildIdentityTitle(identity, identityStatus);
+      const passSymbols = Array.isArray(status.pass_symbols) ? status.pass_symbols : [];
+      const passEl = document.getElementById('pass-symbols');
+      if (passEl) {
+        passEl.textContent = `PASS Symbols: ${passSymbols.length ? passSymbols.join(', ') : '-'}`;
+      }
       const mt5DetailsEl = document.getElementById('mt5-details');
       const mt5Connected = status.mt5_connected;
       const mt5ConnText = mt5Connected === true ? 'CONNECTED' : (mt5Connected === false ? 'DISCONNECTED' : 'UNKNOWN');
@@ -841,19 +988,26 @@
       const modeSelect = document.getElementById('mode-select');
       const portfolioSelect = document.getElementById('portfolio-select');
       const lockNote = document.getElementById('mode-lock-note');
+      const modeLabel = document.getElementById('mode-label');
+      const portfolioLabel = document.getElementById('portfolio-label');
       const shouldLockSelectors = botStatus === 'ARMED';
+      const lockTitle = shouldLockSelectors ? 'locked while ARMED' : '';
       if (modeSelect) {
         if (status.mode && (shouldLockSelectors || status.running)) {
           modeSelect.value = status.mode;
         }
         modeSelect.disabled = shouldLockSelectors;
+        modeSelect.title = lockTitle;
       }
       if (portfolioSelect) {
         if (status.portfolio && (shouldLockSelectors || status.running)) {
           portfolioSelect.value = status.portfolio;
         }
         portfolioSelect.disabled = shouldLockSelectors;
+        portfolioSelect.title = lockTitle;
       }
+      if (modeLabel) modeLabel.title = lockTitle;
+      if (portfolioLabel) portfolioLabel.title = lockTitle;
       if (lockNote) {
         lockNote.style.display = shouldLockSelectors ? 'inline-flex' : 'none';
         lockNote.textContent = 'locked while ARMED';
@@ -908,6 +1062,23 @@
         const mt5Open = status.mt5_open_positions_count ?? 0;
         const evidenceTierText = (status.evidence_tier || 'practice').toUpperCase();
         const lastOrderLine = lastOrderText + (noneCount ? ` | none_count=${noneCount}` : '');
+        const openScorersPos = status.open_positions_scorers;
+        const openWestbrookPos = status.open_positions_westbrook;
+        const openScorersRisk = status.open_risk_scorers_pct;
+        const openWestbrookRisk = status.open_risk_westbrook_pct;
+        const totalOpenRisk = status.total_open_risk_pct;
+        const totalOpenCap = status.portfolio_open_risk_cap_pct;
+        let openRiskLine = '';
+        if (
+          openScorersPos != null
+          || openWestbrookPos != null
+          || totalOpenRisk != null
+        ) {
+          const scorersText = `${formatPct(openScorersRisk)} (pos ${openScorersPos ?? 0})`;
+          const westbrookText = `${formatPct(openWestbrookRisk)} (pos ${openWestbrookPos ?? 0})`;
+          const totalText = `${formatPct(totalOpenRisk)}${totalOpenCap ? ` / cap ${formatPct(totalOpenCap)}` : ''}`;
+          openRiskLine = `<div class="readiness-item">Open Risk: <strong>Scorers ${scorersText} | Westbrook ${westbrookText} | Total ${totalText}</strong></div>`;
+        }
         const mt5TruthStatus = (status.mt5_truth_status || 'unknown').toLowerCase();
         const mt5TruthReason = status.mt5_truth_reason || status.account_snapshot_reason || status.account_snapshot_status || 'unknown';
         const mt5PositionsCount = status.mt5_positions_count;
@@ -978,6 +1149,7 @@
           ${mt5TruthLines}
           <div class="readiness-item">Evidence Tier: <strong>${evidenceTierText}</strong></div>
           <div class="readiness-item">MT5 Trades: <strong>closed=${mt5Closed} open=${mt5Open}</strong></div>
+          ${openRiskLine}
           <div class="readiness-item">Log Events: <strong>total=${logTotal} matched=${matchedTotal} unmatched=${unmatchedTotal}</strong></div>
           <div class="readiness-item">Last Order: <strong>${lastOrderLine}</strong></div>
         `;
@@ -985,12 +1157,22 @@
 
       const activityEl = document.getElementById('simple-activity-stats');
       if (activityEl) {
-        const tradesToday = live.trades_today ?? status.metrics?.trades_today ?? 0;
+        const signalsToday = live.signals_today ?? status.signals_today ?? status.log_events_total ?? 0;
+        const mt5DealsToday = live.mt5_deals_today ?? status.mt5_deals_today ?? 0;
+        const paperShots = live.paper_shots_today ?? status.metrics?.paper_shots_today ?? 0;
+        const paperByEdge = live.paper_shots_by_edge ?? status.metrics?.paper_shots_by_edge ?? {};
+        let paperEdgeLine = '';
+        if (paperByEdge && typeof paperByEdge === 'object') {
+          const parts = Object.entries(paperByEdge).map(([k, v]) => `${k}=${v}`);
+          if (parts.length) paperEdgeLine = ` (${parts.join(', ')})`;
+        }
         const pnlToday = live.pnl_today_pct ?? status.metrics?.pnl_today_pct;
         const pnlText = (typeof pnlToday === 'number') ? `${pnlToday.toFixed(4)}%` : '0%';
         const lastTrade = live.last_trade_time || status.metrics?.last_trade_time || '-';
         activityEl.innerHTML = `
-          <div class="readiness-item">Trades Today: <strong>${tradesToday}</strong></div>
+          <div class="readiness-item">Signals (Omega): <strong>${signalsToday}</strong></div>
+          <div class="readiness-item">MT5 Trades (deals): <strong>${mt5DealsToday}</strong></div>
+          <div class="readiness-item">Paper Shots: <strong>${paperShots}${paperEdgeLine}</strong></div>
           <div class="readiness-item">PnL Today: <strong>${pnlText}</strong></div>
           <div class="readiness-item">Last Trade Time: <strong>${lastTrade}</strong></div>
         `;
@@ -1077,14 +1259,18 @@
       input.value = '';
       log.innerHTML += `<div><strong>You:</strong> ${question}</div>`;
       try {
+        showToast('Sending: AI query...', 'warn');
         const ctx = await fetchJson('/ai_context');
-        const res = await fetchJson('/ai_query', {method:'POST', body: JSON.stringify({user_message: question, ai_context: ctx})});
+        const res = await fetchJson('/ai_query', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({user_message: question, ai_context: ctx})});
         log.innerHTML += `<div><strong>AI:</strong> ${res.answer || res.result || 'No response'}</div>`;
+        showToast('AI query: success', 'ok');
       } catch (e) {
         log.innerHTML += `<div style="color:var(--error);"><strong>AI error:</strong> ${e.message}</div>`;
+        showToast(`AI query: error ${e.message}`, 'err', 4500);
       }
       log.scrollTop = log.scrollHeight;
     }
   </script>
+  <div id="toast-wrap" class="toast-wrap"></div>
 </body>
 </html>
